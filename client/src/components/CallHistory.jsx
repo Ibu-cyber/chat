@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-function CallHistory({ username, partnerName }) {
+function CallHistory({ username, partnerName, partnerNickname, onMobileBack, profilePhoto }) {
   const [logs, setLogs] = useState([]);
 
   useEffect(() => {
@@ -11,7 +11,7 @@ function CallHistory({ username, partnerName }) {
   }, []);
 
   function formatDuration(seconds) {
-    if (!seconds || seconds === 0) return "";
+    if (seconds === null || seconds === undefined || seconds === 0) return "";
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     if (m > 0) return `${m}m ${s}s`;
@@ -50,10 +50,68 @@ function CallHistory({ username, partnerName }) {
     return "call-log-declined";
   }
 
+  function downloadCSV() {
+    const headers = ["Date", "Time", "Type", "Direction", "Status", "Duration (s)", "Partner"];
+    const rows = logs.map((log) => {
+      const d = new Date(log.timestamp);
+      const date = d.toLocaleDateString();
+      const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      return [
+        date,
+        time,
+        log.type || "audio",
+        log.direction || "unknown",
+        log.status || "unknown",
+        log.duration || 0,
+        log.partner || "Unknown",
+      ];
+    });
+
+    let csv = headers.join(",") + "\n";
+    for (const row of rows) {
+      csv += row.map((v) => `"${v}"`).join(",") + "\n";
+    }
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;encoding:utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `heartchat_call_history_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadJSON() {
+    const blob = new Blob([JSON.stringify(logs, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `heartchat_call_history_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="call-history-panel">
       <div className="call-history-header">
+        {onMobileBack && (
+          <button className="mobile-back-button" onClick={onMobileBack} title="Back">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+          </button>
+        )}
         <h2>Call History</h2>
+        {logs.length > 0 && (
+          <div className="call-history-actions">
+            <button className="call-download-btn" onClick={downloadCSV} title="Download as CSV">CSV</button>
+            <button className="call-download-btn" onClick={downloadJSON} title="Download as JSON">JSON</button>
+          </div>
+        )}
       </div>
 
       <div className="call-history-list">
@@ -79,7 +137,12 @@ function CallHistory({ username, partnerName }) {
                   {log.status === "ended" && log.duration > 0 && ` — ${formatDuration(log.duration)}`}
                 </span>
               </div>
-              <span className="call-log-time">{formatDate(log.timestamp)}</span>
+              <div className="call-log-right">
+                <span className="call-log-time">{formatDate(log.timestamp)}</span>
+                {log.recordingUrl && (
+                  <a href={log.recordingUrl} className="call-log-download" download title="Download recording">⬇</a>
+                )}
+              </div>
             </div>
           ))
         )}

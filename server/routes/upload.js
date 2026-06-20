@@ -1,7 +1,7 @@
 // =============================================
-// FILE: upload.js — Handles file uploads (photos & audio)
+// FILE: upload.js — Handles file uploads (photos, audio & documents)
 // =============================================
-// When you send a photo or voice message in the chat,
+// When you send a photo, voice message, or document in the chat,
 // the file first gets uploaded here. This route saves
 // the file to the server and returns a URL so the
 // message can link to it.
@@ -35,50 +35,64 @@ const storage = multer.diskStorage({
 });
 
 // ---------- 3. FILE FILTER ----------
-// Only allow images and audio files (reject everything else)
+// Allow images, audio, and common document types
 function fileFilter(req, file, callback) {
-  // List of allowed file types
   const allowedImageTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
   const allowedAudioTypes = ["audio/webm", "audio/ogg", "audio/mp3", "audio/mpeg", "audio/wav"];
+  const allowedDocTypes = [
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "text/plain",
+    "text/csv",
+    "application/zip",
+    "application/x-rar-compressed",
+    "application/rtf",
+  ];
 
-  // Check if the uploaded file is an image or audio
-  if (allowedImageTypes.includes(file.mimetype) || allowedAudioTypes.includes(file.mimetype)) {
-    callback(null, true); // Accept the file
+  if (
+    allowedImageTypes.includes(file.mimetype) ||
+    allowedAudioTypes.includes(file.mimetype) ||
+    allowedDocTypes.includes(file.mimetype)
+  ) {
+    callback(null, true);
   } else {
-    callback(new Error("Only images and audio files are allowed!"), false); // Reject
+    callback(new Error("Only images, audio, and documents are allowed!"), false);
   }
 }
 
 // ---------- 4. CREATE THE UPLOAD MIDDLEWARE ----------
 const upload = multer({
-  storage: storage, // Where & how to save
-  fileFilter: fileFilter, // What types to allow
+  storage: storage,
+  fileFilter: fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024, // Max 10MB per file
+    fileSize: 20 * 1024 * 1024, // Max 20MB per file
   },
 });
 
 // ---------- 5. THE UPLOAD ROUTE ----------
-// When the client sends a file to POST /api/upload...
 router.post("/", upload.single("file"), (req, res) => {
-  // "file" is the name of the field in the form data
-
-  // Check if a file was actually sent
   if (!req.file) {
     return res.status(400).json({ error: "No file was uploaded." });
   }
 
-  // Build the URL that the chat can use to show this file
-  // Example: "/uploads/photo_1695123456789.jpg"
   const fileUrl = "/uploads/" + req.file.filename;
-
-  // Determine if this is an image or audio (for the client to know)
   const isImage = req.file.mimetype.startsWith("image/");
+  const isAudio = req.file.mimetype.startsWith("audio/");
 
-  // Send back the URL and type
+  let type;
+  if (isImage) type = "image";
+  else if (isAudio) type = "audio";
+  else type = "file";
+
   res.json({
-    url: fileUrl, // The web address of the uploaded file
-    type: isImage ? "image" : "audio", // Whether it's a photo or voice message
+    url: fileUrl,
+    type: type,
+    fileName: req.file.originalname,
   });
 });
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-function MessageBubble({ message, isOwn, onImageClick }) {
+function MessageBubble({ message, isOwn, partnerDisplayName, partnerNickname, onImageClick }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioRef, setAudioRef] = useState(null);
 
@@ -25,13 +25,19 @@ function MessageBubble({ message, isOwn, onImageClick }) {
     }
   }
 
-  function handleDownload(url, filename) {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  async function handleDownload(url, filename) {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch {}
   }
 
   function getImageFilename(url) {
@@ -44,9 +50,23 @@ function MessageBubble({ message, isOwn, onImageClick }) {
     return parts[parts.length - 1] || "audio.webm";
   }
 
+  function getFileIcon(fileName) {
+    if (!fileName) return "📄";
+    const ext = fileName.split(".").pop().toLowerCase();
+    if (["pdf"].includes(ext)) return "📕";
+    if (["doc", "docx"].includes(ext)) return "📘";
+    if (["xls", "xlsx", "csv"].includes(ext)) return "📊";
+    if (["ppt", "pptx"].includes(ext)) return "📙";
+    if (["zip", "rar"].includes(ext)) return "🗜️";
+    if (["txt", "rtf"].includes(ext)) return "📄";
+    return "📄";
+  }
+
+
+
   return (
     <div className={`message-wrapper ${isOwn ? "message-own" : "message-other"}`}>
-      {!isOwn && <span className="message-sender">{message.sender}</span>}
+      {!isOwn && <span className="message-sender">{partnerNickname || partnerDisplayName || message.sender}</span>}
 
       <div className={`message-bubble ${isOwn ? "bubble-own" : "bubble-other"}`}>
         {message.text && <p className="message-text">{message.text}</p>}
@@ -93,6 +113,22 @@ function MessageBubble({ message, isOwn, onImageClick }) {
               src={message.audioUrl}
               onEnded={() => setIsPlaying(false)}
             />
+          </div>
+        )}
+
+        {message.fileUrl && (
+          <div className="message-document">
+            <span className="doc-icon">{getFileIcon(message.fileName)}</span>
+            <div className="doc-info">
+              <span className="doc-name">{message.fileName || "Document"}</span>
+            </div>
+            <button
+              className="media-download-button doc-dl"
+              onClick={() => handleDownload(message.fileUrl, message.fileName || "document")}
+              title="Download file"
+            >
+              ⬇
+            </button>
           </div>
         )}
 

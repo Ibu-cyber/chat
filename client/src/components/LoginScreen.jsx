@@ -42,6 +42,10 @@ function LoginScreen({ onLoginSuccess }) {
     // If the server accepts our credentials...
     socket.on("connect", () => {
       setIsLoading(false);
+      // Save session so refresh doesn't log us out
+      try {
+        localStorage.setItem("heartchat_session", JSON.stringify({ username, password }));
+      } catch {}
       onLoginSuccess(username); // Tell App.jsx we're logged in!
     });
 
@@ -112,11 +116,6 @@ function LoginScreen({ onLoginSuccess }) {
             {isLoading ? "Connecting..." : "Enter the Chat 💌"}
           </button>
         </form>
-
-        {/* Hint */}
-        <p className="login-hint">
-          The names and passwords are set in the <code>.env</code> file
-        </p>
       </div>
     </div>
   );

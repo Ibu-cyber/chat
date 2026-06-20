@@ -38,6 +38,18 @@ const messageSchema = new mongoose.Schema({
     default: null, // null means "no audio"
   },
 
+  // Web address of an uploaded document (PDF, Word, etc.)
+  fileUrl: {
+    type: String,
+    default: null,
+  },
+
+  // Original filename of the uploaded document
+  fileName: {
+    type: String,
+    default: null,
+  },
+
   // Message delivery status: "sent" | "delivered" | "read"
   status: {
     type: String,

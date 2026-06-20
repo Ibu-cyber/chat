@@ -54,7 +54,7 @@ function createPeerConnection(stream, onRemoteStream, onIceCandidate) {
   return pc;
 }
 
-function ChatPage({ username, partnerName, partnerStatus, partnerOnline, selectedContact, onPartnerInfo, messages }) {
+function ChatPage({ username, displayName, partnerName, partnerDisplayName, partnerNickname, partnerStatus, partnerOnline, selectedContact, onPartnerInfo, messages, onMobileBack, profilePhoto, partnerPhoto, chatBackground }) {
   const [typingUser, setTypingUser] = useState(null);
   const [viewingImage, setViewingImage] = useState(null);
   const [showRecorder, setShowRecorder] = useState(false);
@@ -74,6 +74,62 @@ function ChatPage({ username, partnerName, partnerStatus, partnerOnline, selecte
   const remoteStreamRef = useRef(null);
   const pendingCandidatesRef = useRef([]);
   const callStartTimeRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const recordingChunksRef = useRef([]);
+
+  function startCallRecording() {
+    if (mediaRecorderRef.current) return;
+    const tracks = [];
+    if (localStreamRef.current) {
+      for (const t of localStreamRef.current.getAudioTracks()) {
+        tracks.push(t);
+      }
+    }
+    if (remoteStreamRef.current) {
+      for (const t of remoteStreamRef.current.getAudioTracks()) {
+        tracks.push(t);
+      }
+    }
+    if (tracks.length === 0) return;
+    const combined = new MediaStream(tracks);
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus" : "audio/webm";
+    const recorder = new MediaRecorder(combined, { mimeType });
+    recordingChunksRef.current = [];
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) recordingChunksRef.current.push(e.data);
+    };
+    recorder.start();
+    mediaRecorderRef.current = recorder;
+  }
+
+  function stopCallRecording() {
+    return new Promise((resolve) => {
+      const recorder = mediaRecorderRef.current;
+      if (!recorder || recorder.state === "inactive") { resolve(null); return; }
+      recorder.onstop = () => {
+        const blob = new Blob(recordingChunksRef.current, { type: recorder.mimeType });
+        recordingChunksRef.current = [];
+        mediaRecorderRef.current = null;
+        resolve(blob);
+      };
+      recorder.stop();
+    });
+  }
+
+  async function uploadRecording(blob) {
+    if (!blob) return null;
+    const formData = new FormData();
+    formData.append("file", blob, `call_${Date.now()}.webm`);
+    try {
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      if (res.ok) {
+        const data = await res.json();
+        return data.url;
+      }
+    } catch {}
+    return null;
+  }
 
   useEffect(() => {
     const socket = getSocket();
@@ -115,7 +171,7 @@ function ChatPage({ username, partnerName, partnerStatus, partnerOnline, selecte
         const stream = localStreamRef.current;
         const pc = createPeerConnection(
           stream,
-          (remote) => { remoteStreamRef.current = remote; setRemoteStream(remote); },
+          (remote) => { remoteStreamRef.current = remote; setRemoteStream(remote); startCallRecording(); },
           (candidate) => getSocket().emit("ice_candidate", { candidate })
         );
         pcRef.current = pc;
@@ -148,7 +204,7 @@ function ChatPage({ username, partnerName, partnerStatus, partnerOnline, selecte
         const stream = localStreamRef.current;
         const pc = createPeerConnection(
           stream,
-          (remote) => { remoteStreamRef.current = remote; setRemoteStream(remote); },
+          (remote) => { remoteStreamRef.current = remote; setRemoteStream(remote); startCallRecording(); },
           (candidate) => getSocket().emit("ice_candidate", { candidate })
         );
         pcRef.current = pc;
@@ -193,16 +249,19 @@ function ChatPage({ username, partnerName, partnerStatus, partnerOnline, selecte
       }
     });
 
-    socket.on("call_ended", () => {
+    socket.on("call_ended", async () => {
       if (callStatusRef.current === "idle") return;
       const duration = callStartTimeRef.current
         ? Math.round((Date.now() - callStartTimeRef.current) / 1000)
         : 0;
+      const blob = await stopCallRecording();
+      const recordingUrl = await uploadRecording(blob);
       addCallLog({
         type: callTypeRef.current,
         direction: callStatusRef.current === "calling" ? "outgoing" : "incoming",
         status: duration > 0 ? "ended" : "missed",
         duration,
+        recordingUrl,
         partner: partnerName,
         timestamp: new Date().toISOString(),
       });
@@ -328,19 +387,22 @@ function ChatPage({ username, partnerName, partnerStatus, partnerOnline, selecte
     callStatusRef.current = "idle";
   }
 
-  function endCall() {
+  async function endCall() {
     const duration = callStartTimeRef.current
       ? Math.round((Date.now() - callStartTimeRef.current) / 1000)
       : 0;
+    getSocket().emit("call_ended");
+    const blob = await stopCallRecording();
+    const recordingUrl = await uploadRecording(blob);
     addCallLog({
       type: callTypeRef.current,
       direction: callStatusRef.current === "calling" ? "outgoing" : "incoming",
       status: "ended",
       duration,
+      recordingUrl,
       partner: partnerName,
       timestamp: new Date().toISOString(),
     });
-    getSocket().emit("call_ended");
     cleanupCall();
     setCallStatus("ended");
     callStatusRef.current = "ended";
@@ -368,7 +430,7 @@ function ChatPage({ username, partnerName, partnerStatus, partnerOnline, selecte
     }
   }
 
-  function handleSendFile(fileUrl, fileType) {
+  function handleSendFile(fileUrl, fileType, fileName) {
     const socket = getSocket();
     if (!socket) return;
     const messageData = {};
@@ -376,6 +438,9 @@ function ChatPage({ username, partnerName, partnerStatus, partnerOnline, selecte
       messageData.imageUrl = fileUrl;
     } else if (fileType === "audio") {
       messageData.audioUrl = fileUrl;
+    } else if (fileType === "file") {
+      messageData.fileUrl = fileUrl;
+      messageData.fileName = fileName || "Document";
     }
     messageData.text = "";
     socket.emit("send_message", messageData);
@@ -394,13 +459,24 @@ function ChatPage({ username, partnerName, partnerStatus, partnerOnline, selecte
   return (
     <div className="chat-panel">
       <div className="chat-panel-header">
+        {onMobileBack && (
+          <button className="mobile-back-button" onClick={onMobileBack} title="Back">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+          </button>
+        )}
         <div className="chat-panel-contact">
           <div className="panel-avatar">
-            {partnerName ? partnerName.charAt(0).toUpperCase() : "?"}
+            {partnerPhoto ? (
+              <img src={partnerPhoto} alt="" className="avatar-img" />
+            ) : (
+              partnerName ? (partnerNickname || partnerDisplayName || partnerName).charAt(0).toUpperCase() : "?"
+            )}
           </div>
           <div className="panel-contact-info">
             <span className="panel-contact-name">
-              {partnerName || "Loading..."}
+              {partnerNickname || partnerDisplayName || partnerName || "Loading..."}
             </span>
             <span className={`panel-contact-status ${partnerOnline ? "status-online" : "status-offline"}`}>{partnerStatus}</span>
           </div>
@@ -430,7 +506,14 @@ function ChatPage({ username, partnerName, partnerStatus, partnerOnline, selecte
         </div>
       </div>
 
-      <div className="messages-container">
+      <div className="messages-container" style={chatBackground ? { backgroundImage: `url(${chatBackground})`, backgroundSize: "cover", backgroundPosition: "center", backgroundColor: "transparent" } : {}}>
+        <span className="floating-heart" style={{ top: "15%", left: "3%", fontSize: "22px", animationDelay: "0s", opacity: "0.08" }}>💕</span>
+        <span className="floating-heart" style={{ top: "28%", right: "5%", fontSize: "16px", animationDelay: "1.5s", opacity: "0.1" }}>❤️</span>
+        <span className="floating-heart" style={{ top: "50%", left: "8%", fontSize: "18px", animationDelay: "3s", opacity: "0.07" }}>💖</span>
+        <span className="floating-heart" style={{ top: "65%", right: "8%", fontSize: "14px", animationDelay: "0.8s", opacity: "0.09" }}>💗</span>
+        <span className="floating-heart" style={{ top: "80%", left: "5%", fontSize: "20px", animationDelay: "2.2s", opacity: "0.06" }}>😘</span>
+        <span className="floating-heart" style={{ top: "10%", right: "12%", fontSize: "15px", animationDelay: "4s", opacity: "0.08" }}>💕</span>
+
         {messages.length === 0 ? (
           <div className="messages-empty">
             <p>No messages yet...</p>
@@ -442,6 +525,8 @@ function ChatPage({ username, partnerName, partnerStatus, partnerOnline, selecte
               key={msg._id}
               message={msg}
               isOwn={msg.sender === username}
+              partnerDisplayName={partnerDisplayName}
+              partnerNickname={partnerNickname}
               onImageClick={(url) => setViewingImage(url)}
             />
           ))
@@ -452,7 +537,7 @@ function ChatPage({ username, partnerName, partnerStatus, partnerOnline, selecte
             <span className="typing-dot"></span>
             <span className="typing-dot"></span>
             <span className="typing-dot"></span>
-            <span className="typing-text">{typingUser} is typing...</span>
+            <span className="typing-text">{partnerNickname || partnerDisplayName || typingUser} is typing...</span>
           </div>
         )}
 
@@ -474,6 +559,7 @@ function ChatPage({ username, partnerName, partnerStatus, partnerOnline, selecte
             onTyping={handleTyping}
             onStopTyping={handleStopTyping}
             onAttachImage={() => document.getElementById("imageInput").click()}
+            onAttachDocument={() => document.getElementById("docInput").click()}
             onRecordAudio={() => setShowRecorder(true)}
           />
         )}
@@ -503,6 +589,31 @@ function ChatPage({ username, partnerName, partnerStatus, partnerOnline, selecte
             e.target.value = "";
           }}
         />
+        <input
+          id="docInput"
+          type="file"
+          accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.rtf"
+          hidden
+          onChange={async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            try {
+              const formData = new FormData();
+              formData.append("file", file);
+              const response = await fetch("/api/upload", { method: "POST", body: formData });
+              if (!response.ok) {
+                const error = await response.json();
+                alert(error.error || "Failed to upload document.");
+                return;
+              }
+              const result = await response.json();
+              handleSendFile(result.url, result.type, result.fileName);
+            } catch {
+              alert("Failed to upload document. Is the server running?");
+            }
+            e.target.value = "";
+          }}
+        />
       </div>
 
       {callStatus !== "idle" && (
@@ -511,6 +622,8 @@ function ChatPage({ username, partnerName, partnerStatus, partnerOnline, selecte
           callType={callType}
           username={username}
           partnerName={partnerName}
+          partnerDisplayName={partnerDisplayName}
+          partnerNickname={partnerNickname}
           localStream={localStream}
           remoteStream={remoteStream}
           onAccept={acceptCall}

@@ -106,6 +106,9 @@ app.use("/api/upload", uploadRouter);
 // Socket.IO lets us instantly tell the other person.
 
 const userPresence = {};
+const userProfiles = {};
+const displayNames = {};
+let sharedBg = null;
 
 io.on("connection", async (socket) => {
   const username = socket.username;
@@ -123,17 +126,8 @@ io.on("connection", async (socket) => {
     socket.emit("presence_update", { username: partnerName, ...partnerPresence });
   }
 
-  // ---------- Once connected, send the chat history ----------
+  // ---------- Mark undelivered messages from partner as delivered ----------
   try {
-    const recentMessages = await Message.find()
-      .sort({ createdAt: -1 })
-      .limit(100)
-      .sort({ createdAt: 1 });
-
-    socket.emit("load_messages", recentMessages);
-    console.log(`  Sent ${recentMessages.length} messages to ${username}`);
-
-    // Mark any undelivered messages from partner as delivered
     const undelivered = await Message.find({
       sender: partnerName,
       status: "sent",
@@ -147,10 +141,14 @@ io.on("connection", async (socket) => {
       console.log(`  Marked ${undelivered.length} messages as delivered for ${username}`);
     }
 
+    const partnerProfile = userProfiles[partnerName] || {};
     socket.emit("partner_info", {
       partnerName,
       partnerOnline: partnerPresence ? partnerPresence.online : false,
       partnerLastSeen: partnerPresence ? partnerPresence.lastSeen : null,
+      partnerPhoto: partnerProfile.photo || null,
+      partnerDisplayName: displayNames[partnerName] || null,
+      sharedBg,
     });
   } catch (error) {
     console.error("Error loading messages:", error.message);
@@ -164,6 +162,8 @@ io.on("connection", async (socket) => {
         text: data.text || "",
         imageUrl: data.imageUrl || null,
         audioUrl: data.audioUrl || null,
+        fileUrl: data.fileUrl || null,
+        fileName: data.fileName || null,
       });
 
       const savedMessage = await newMessage.save();
@@ -179,6 +179,20 @@ io.on("connection", async (socket) => {
     } catch (error) {
       console.error("Error saving message:", error.message);
       socket.emit("message_error", "Failed to save message. Please try again.");
+    }
+  });
+
+  // ---------- Listen for message history request ----------
+  socket.on("request_messages", async () => {
+    try {
+      const recentMessages = await Message.find()
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .sort({ createdAt: 1 });
+      socket.emit("load_messages", recentMessages);
+      console.log(`  Sent ${recentMessages.length} messages to ${socket.username} (on request)`);
+    } catch (error) {
+      console.error("Error loading messages on request:", error.message);
     }
   });
 
@@ -234,6 +248,33 @@ io.on("connection", async (socket) => {
     if (partnerPresence) {
       socket.emit("presence_update", { username: partnerName, ...partnerPresence });
     }
+    const partnerProfile = userProfiles[partnerName] || {};
+    socket.emit("partner_info", {
+      partnerName,
+      partnerOnline: partnerPresence ? partnerPresence.online : false,
+      partnerLastSeen: partnerPresence ? partnerPresence.lastSeen : null,
+      partnerPhoto: partnerProfile.photo || null,
+      partnerDisplayName: displayNames[partnerName] || null,
+      sharedBg,
+    });
+  });
+
+  // ---------- Display name sharing ----------
+  socket.on("display_name_update", (data) => {
+    displayNames[socket.username] = data.displayName;
+    socket.broadcast.emit("partner_display_name_update", { displayName: data.displayName });
+  });
+
+  // ---------- Profile photo sharing ----------
+  socket.on("profile_update", (data) => {
+    userProfiles[socket.username] = { ...(userProfiles[socket.username] || {}), photo: data.photoUrl };
+    socket.broadcast.emit("partner_profile_update", { username: socket.username, photoUrl: data.photoUrl });
+  });
+
+  // ---------- Chat background sharing ----------
+  socket.on("bg_update", (data) => {
+    sharedBg = data.bgUrl;
+    socket.broadcast.emit("partner_bg_update", { bgUrl: data.bgUrl });
   });
 
   // ---------- Audio/Video Call Signaling ----------

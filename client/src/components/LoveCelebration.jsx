@@ -4,10 +4,12 @@ function randomBetween(min, max) {
   return min + Math.random() * (max - min);
 }
 
-function Heart({ style }) {
+const emojis = ["❤️", "😘", "💕", "💗", "💖"];
+
+function Heart({ style, emoji }) {
   return (
     <span className="love-heart" style={style}>
-      ❤️
+      {emoji}
     </span>
   );
 }
@@ -22,9 +24,11 @@ function generateHearts(count) {
     const size = randomBetween(16, 40);
     const drift = randomBetween(-60, 60);
     const color = colors[Math.floor(Math.random() * colors.length)];
+    const emoji = emojis[Math.floor(Math.random() * emojis.length)];
     hearts.push(
       <Heart
         key={i}
+        emoji={emoji}
         style={{
           left: `${left}%`,
           animationDelay: `${delay}s`,
@@ -55,7 +59,7 @@ function LoveCelebration({ message, onComplete }) {
   return (
     <div className="love-celebration">
       <div className="love-celebration-content">
-        <div className="love-celebration-title">💕 Love you too! 💕</div>
+        <div className="love-celebration-title">💕 {message.text} 😘</div>
       </div>
       <div className="love-hearts-rain">
         {generateHearts(30)}
