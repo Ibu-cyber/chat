@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import ThemeToggle from "./ThemeToggle";
 
-function Sidebar({ username, displayName, partnerName, partnerDisplayName, partnerNickname, partnerStatus, partnerOnline, selectedContact, onSelectContact, onLogout, activeTab, onTabChange, profilePhoto, partnerPhoto, onOpenProfile, onPartnerNicknameChange }) {
+function Sidebar({ username, displayName, partnerName, partnerDisplayName, partnerNickname, partnerStatus, partnerOnline, selectedContact, onSelectContact, onLogout, activeTab, onTabChange, profilePhoto, partnerPhoto, onOpenProfile, onPartnerNicknameChange, missedCallCount, onClearMissedCalls }) {
   const [editingNickname, setEditingNickname] = useState(false);
   const [nicknameInput, setNicknameInput] = useState(partnerNickname || "");
   const inputRef = useRef(null);
@@ -90,9 +90,10 @@ function Sidebar({ username, displayName, partnerName, partnerDisplayName, partn
         </button>
         <button
           className={`sidebar-nav-button ${activeTab === "calls" ? "nav-active" : ""}`}
-          onClick={() => onTabChange("calls")}
+          onClick={() => { onTabChange("calls"); if (onClearMissedCalls) onClearMissedCalls(); }}
         >
           Calls
+          {missedCallCount > 0 && <span className="missed-call-badge">{missedCallCount}</span>}
         </button>
         <button
           className={`sidebar-nav-button ${activeTab === "media" ? "nav-active" : ""}`}

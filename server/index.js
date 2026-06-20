@@ -154,15 +154,18 @@ io.on("connection", async (socket) => {
       sharedBg,
     });
 
-    if (missedCalls[username] && missedCalls[username].length > 0) {
-      for (const call of missedCalls[username]) {
-        socket.emit("missed_call", call);
-      }
-      missedCalls[username] = [];
-    }
   } catch (error) {
     console.error("Error loading messages:", error.message);
   }
+
+  // ---------- Request missed calls (request-based, no race condition) ----------
+  socket.on("request_missed_calls", () => {
+    const calls = missedCalls[username] || [];
+    if (calls.length > 0) {
+      socket.emit("missed_calls_list", calls);
+      missedCalls[username] = [];
+    }
+  });
 
   // ---------- Listen for new text messages ----------
   socket.on("send_message", async (data) => {

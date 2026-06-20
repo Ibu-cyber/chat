@@ -4,147 +4,17 @@ import MessageBubble from "../components/MessageBubble";
 import MessageInput from "../components/MessageInput";
 import ImageViewer from "../components/ImageViewer";
 import AudioRecorder from "../components/AudioRecorder";
-import CallOverlay from "../components/CallOverlay";
 import LoveCelebration from "../components/LoveCelebration";
 
-const PC_CONFIG = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-  ],
-};
-
-function addCallLog(entry) {
-  try {
-    const logs = JSON.parse(localStorage.getItem("heartchat_call_logs") || "[]");
-    logs.unshift({ ...entry, id: Date.now() });
-    if (logs.length > 100) logs.length = 100;
-    localStorage.setItem("heartchat_call_logs", JSON.stringify(logs));
-  } catch {}
-}
-
-async function getMedia(video) {
-  return navigator.mediaDevices.getUserMedia({ audio: true, video });
-}
-
-function createPeerConnection(stream, onRemoteStream, onIceCandidate, remoteAudioRef) {
-  const pc = new RTCPeerConnection(PC_CONFIG);
-  stream.getTracks().forEach((t) => pc.addTrack(t, stream));
-  const receivedStreamRef = { current: null };
-  pc.ontrack = (event) => {
-    const remote = event.streams && event.streams[0]
-      ? event.streams[0]
-      : event.track
-        ? new MediaStream([event.track])
-        : null;
-    if (remote) {
-      if (!receivedStreamRef.current) {
-        receivedStreamRef.current = remote;
-        onRemoteStream(remote);
-        if (remoteAudioRef && remoteAudioRef.current) {
-          remoteAudioRef.current.srcObject = remote;
-          remoteAudioRef.current.play().catch(() => {});
-        }
-      } else if (receivedStreamRef.current !== remote) {
-        event.track && receivedStreamRef.current.addTrack(event.track);
-      }
-    }
-  };
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      onIceCandidate(event.candidate.toJSON ? event.candidate.toJSON() : event.candidate);
-    }
-  };
-  pc.oniceconnectionstatechange = () => {
-    console.log("ICE state:", pc.iceConnectionState);
-  };
-  return pc;
-}
-
-function ChatPage({ username, displayName, partnerName, partnerDisplayName, partnerNickname, partnerStatus, partnerOnline, selectedContact, onPartnerInfo, messages, onMobileBack, profilePhoto, partnerPhoto, chatBackground }) {
+function ChatPage({ username, displayName, partnerName, partnerDisplayName, partnerNickname, partnerStatus, partnerOnline, selectedContact, onPartnerInfo, messages, onMobileBack, profilePhoto, partnerPhoto, chatBackground, callStatus, onStartCall }) {
   const [typingUser, setTypingUser] = useState(null);
   const [viewingImage, setViewingImage] = useState(null);
   const [showRecorder, setShowRecorder] = useState(false);
   const [celebrationMessage, setCelebrationMessage] = useState(null);
   const messagesEndRef = useRef(null);
 
-  const [callStatus, setCallStatus] = useState("idle");
-  const [callType, setCallType] = useState(null);
-  const [localStream, setLocalStream] = useState(null);
-  const [remoteStream, setRemoteStream] = useState(null);
-  const [isMuted, setIsMuted] = useState(false);
-
-  const callStatusRef = useRef("idle");
-  const callTypeRef = useRef(null);
-  const pcRef = useRef(null);
-  const localStreamRef = useRef(null);
-  const remoteStreamRef = useRef(null);
-  const remoteAudioRef = useRef(null);
-  const pendingCandidatesRef = useRef([]);
-  const callStartTimeRef = useRef(null);
-  const mediaRecorderRef = useRef(null);
-  const recordingChunksRef = useRef([]);
-
-  function startCallRecording() {
-    if (mediaRecorderRef.current) return;
-    const tracks = [];
-    if (localStreamRef.current) {
-      for (const t of localStreamRef.current.getAudioTracks()) {
-        tracks.push(t);
-      }
-    }
-    if (remoteStreamRef.current) {
-      for (const t of remoteStreamRef.current.getAudioTracks()) {
-        tracks.push(t);
-      }
-    }
-    if (tracks.length === 0) return;
-    const combined = new MediaStream(tracks);
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-      ? "audio/webm;codecs=opus" : "audio/webm";
-    const recorder = new MediaRecorder(combined, { mimeType });
-    recordingChunksRef.current = [];
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) recordingChunksRef.current.push(e.data);
-    };
-    recorder.start();
-    mediaRecorderRef.current = recorder;
-  }
-
-  function stopCallRecording() {
-    return new Promise((resolve) => {
-      const recorder = mediaRecorderRef.current;
-      if (!recorder || recorder.state === "inactive") { resolve(null); return; }
-      recorder.onstop = () => {
-        const blob = new Blob(recordingChunksRef.current, { type: recorder.mimeType });
-        recordingChunksRef.current = [];
-        mediaRecorderRef.current = null;
-        resolve(blob);
-      };
-      recorder.stop();
-    });
-  }
-
-  async function uploadRecording(blob) {
-    if (!blob) return null;
-    const formData = new FormData();
-    formData.append("file", blob, `call_${Date.now()}.webm`);
-    try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      if (res.ok) {
-        const data = await res.json();
-        return data.url;
-      }
-    } catch {}
-    return null;
-  }
-
   useEffect(() => {
     const socket = getSocket();
-
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
-    }
 
     socket.on("user_typing", (data) => {
       if (data.username !== username) {
@@ -166,160 +36,13 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
       }
     });
 
-    socket.on("missed_call", (data) => {
-      addCallLog({
-        type: data.type,
-        direction: "incoming",
-        status: "missed",
-        partner: partnerName,
-        timestamp: data.timestamp,
-        duration: 0,
-      });
-      const name = partnerNickname || partnerDisplayName || partnerName;
-      const callTypeLabel = data.type === "video" ? "Video" : "Audio";
-      const notification = new Notification(`${callTypeLabel} call from ${name}`, {
-        body: "You missed a call while you were away.",
-        icon: "/favicon.ico",
-      });
-      setTimeout(() => notification.close(), 5000);
-    });
-
     socket.emit("get_partner_info");
-
-    socket.on("incoming_call", (data) => {
-      if (callStatusRef.current === "idle") {
-        setCallType(data.type);
-        callTypeRef.current = data.type;
-        setCallStatus("ringing");
-        callStatusRef.current = "ringing";
-      }
-    });
-
-    socket.on("call_accepted", async () => {
-      if (callStatusRef.current === "calling" && localStreamRef.current) {
-        callStartTimeRef.current = Date.now();
-        const stream = localStreamRef.current;
-        const pc = createPeerConnection(
-          stream,
-          (remote) => { remoteStreamRef.current = remote; setRemoteStream(remote); startCallRecording(); },
-          (candidate) => getSocket().emit("ice_candidate", { candidate }),
-          remoteAudioRef
-        );
-        pcRef.current = pc;
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        getSocket().emit("offer", { offer: pc.localDescription });
-        setCallStatus("connected");
-        callStatusRef.current = "connected";
-      }
-    });
-
-    socket.on("call_rejected", () => {
-      if (callStatusRef.current === "calling") {
-        addCallLog({
-          type: callTypeRef.current,
-          direction: "outgoing",
-          status: "declined",
-          partner: partnerName,
-          timestamp: new Date().toISOString(),
-        });
-        cleanupCall();
-        setCallStatus("idle");
-        callStatusRef.current = "idle";
-      }
-    });
-
-    socket.on("offer", async (data) => {
-      if (callStatusRef.current === "ringing" && localStreamRef.current) {
-        callStartTimeRef.current = Date.now();
-        const stream = localStreamRef.current;
-        const pc = createPeerConnection(
-          stream,
-          (remote) => { remoteStreamRef.current = remote; setRemoteStream(remote); startCallRecording(); },
-          (candidate) => getSocket().emit("ice_candidate", { candidate }),
-          remoteAudioRef
-        );
-        pcRef.current = pc;
-        await pc.setRemoteDescription(data.offer);
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        getSocket().emit("answer", { answer: pc.localDescription });
-        for (const c of pendingCandidatesRef.current) {
-          await pc.addIceCandidate(c);
-        }
-        pendingCandidatesRef.current = [];
-        setCallStatus("connected");
-        callStatusRef.current = "connected";
-      }
-    });
-
-    socket.on("answer", async (data) => {
-      if (pcRef.current && !pcRef.current.remoteDescription) {
-        try {
-          await pcRef.current.setRemoteDescription(data.answer);
-          for (const c of pendingCandidatesRef.current) {
-            await pcRef.current.addIceCandidate(c);
-          }
-          pendingCandidatesRef.current = [];
-        } catch (err) {
-          console.error("Error setting remote description:", err);
-        }
-      }
-    });
-
-    socket.on("ice_candidate", async (data) => {
-      if (pcRef.current) {
-        try {
-          if (pcRef.current.remoteDescription) {
-            await pcRef.current.addIceCandidate(data.candidate);
-          } else {
-            pendingCandidatesRef.current.push(data.candidate);
-          }
-        } catch (err) {
-          console.error("Error adding ICE candidate:", err);
-        }
-      }
-    });
-
-    socket.on("call_ended", async () => {
-      if (callStatusRef.current === "idle") return;
-      const duration = callStartTimeRef.current
-        ? Math.round((Date.now() - callStartTimeRef.current) / 1000)
-        : 0;
-      const blob = await stopCallRecording();
-      const recordingUrl = await uploadRecording(blob);
-      addCallLog({
-        type: callTypeRef.current,
-        direction: callStatusRef.current === "calling" ? "outgoing" : "incoming",
-        status: duration > 0 ? "ended" : "missed",
-        duration,
-        recordingUrl,
-        partner: partnerName,
-        timestamp: new Date().toISOString(),
-      });
-      cleanupCall();
-      setCallStatus("ended");
-      callStatusRef.current = "ended";
-      setTimeout(() => {
-        setCallStatus("idle");
-        callStatusRef.current = "idle";
-        callStartTimeRef.current = null;
-      }, 2000);
-    });
 
     return () => {
       socket.off("user_typing");
       socket.off("user_stop_typing");
       socket.off("message_error");
       socket.off("partner_info");
-      socket.off("missed_call");
-      socket.off("incoming_call");
-      socket.off("call_accepted");
-      socket.off("call_rejected");
-      socket.off("offer");
-      socket.off("answer");
-      socket.off("ice_candidate");
-      socket.off("call_ended");
     };
   }, [username, onPartnerInfo]);
 
@@ -351,110 +74,6 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
-
-  function cleanupCall() {
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((t) => t.stop());
-      localStreamRef.current = null;
-    }
-    setLocalStream(null);
-    setRemoteStream(null);
-    if (remoteStreamRef.current) {
-      remoteStreamRef.current.getTracks().forEach((t) => t.stop());
-      remoteStreamRef.current = null;
-    }
-    if (pcRef.current) {
-      pcRef.current.close();
-      pcRef.current = null;
-    }
-    setIsMuted(false);
-    pendingCandidatesRef.current = [];
-  }
-
-  async function startCall(type) {
-    if (callStatusRef.current !== "idle") return;
-    try {
-      callTypeRef.current = type;
-      setCallType(type);
-      const stream = await getMedia(type === "video");
-      localStreamRef.current = stream;
-      setLocalStream(stream);
-      setCallStatus("calling");
-      callStatusRef.current = "calling";
-      getSocket().emit("call_user", { caller: username, type });
-    } catch (err) {
-      console.error("Media error:", err);
-      alert("Could not access camera/microphone. Please check permissions.");
-    }
-  }
-
-  async function acceptCall() {
-    if (callStatusRef.current !== "ringing") return;
-    try {
-      const stream = await getMedia(callTypeRef.current === "video");
-      localStreamRef.current = stream;
-      setLocalStream(stream);
-      getSocket().emit("call_accepted", { callee: username });
-    } catch (err) {
-      console.error("Media error:", err);
-      alert("Could not access camera/microphone. Please check permissions.");
-      getSocket().emit("call_rejected", { callee: username });
-      cleanupCall();
-      setCallStatus("idle");
-      callStatusRef.current = "idle";
-    }
-  }
-
-  function rejectCall() {
-    if (callStatusRef.current !== "ringing") return;
-    addCallLog({
-      type: callTypeRef.current,
-      direction: "incoming",
-      status: "declined",
-      partner: partnerName,
-      timestamp: new Date().toISOString(),
-    });
-    getSocket().emit("call_rejected", { callee: username });
-    cleanupCall();
-    setCallStatus("idle");
-    callStatusRef.current = "idle";
-  }
-
-  async function endCall() {
-    const duration = callStartTimeRef.current
-      ? Math.round((Date.now() - callStartTimeRef.current) / 1000)
-      : 0;
-    getSocket().emit("call_ended");
-    const blob = await stopCallRecording();
-    const recordingUrl = await uploadRecording(blob);
-    addCallLog({
-      type: callTypeRef.current,
-      direction: callStatusRef.current === "calling" ? "outgoing" : "incoming",
-      status: "ended",
-      duration,
-      recordingUrl,
-      partner: partnerName,
-      timestamp: new Date().toISOString(),
-    });
-    cleanupCall();
-    setCallStatus("ended");
-    callStatusRef.current = "ended";
-    setTimeout(() => {
-      setCallStatus("idle");
-      callStatusRef.current = "idle";
-      callStartTimeRef.current = null;
-    }, 2000);
-  }
-
-  function toggleMute() {
-    if (localStreamRef.current) {
-      const audioTrack = localStreamRef.current.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        setIsMuted(!audioTrack.enabled);
-      }
-    }
-  }
 
   function handleSendMessage(text) {
     const socket = getSocket();
@@ -517,7 +136,7 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
         <div className="panel-header-actions">
           <button
             className="header-call-button header-call-audio"
-            onClick={() => startCall("audio")}
+            onClick={() => onStartCall("audio")}
             title="Audio call"
             disabled={!partnerName || callStatus !== "idle"}
           >
@@ -527,7 +146,7 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
           </button>
           <button
             className="header-call-button header-call-video"
-            onClick={() => startCall("video")}
+            onClick={() => onStartCall("video")}
             title="Video call"
             disabled={!partnerName || callStatus !== "idle"}
           >
@@ -648,26 +267,6 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
           }}
         />
       </div>
-
-      <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: "none" }} />
-
-      {callStatus !== "idle" && (
-        <CallOverlay
-          status={callStatus}
-          callType={callType}
-          username={username}
-          partnerName={partnerName}
-          partnerDisplayName={partnerDisplayName}
-          partnerNickname={partnerNickname}
-          localStream={localStream}
-          remoteStream={remoteStream}
-          onAccept={acceptCall}
-          onReject={rejectCall}
-          onEnd={endCall}
-          onToggleMute={toggleMute}
-          isMuted={isMuted}
-        />
-      )}
 
       {viewingImage && (
         <ImageViewer imageUrl={viewingImage} onClose={() => setViewingImage(null)} />
