@@ -27,7 +27,7 @@ async function getMedia(video) {
   return navigator.mediaDevices.getUserMedia({ audio: true, video });
 }
 
-function createPeerConnection(stream, onRemoteStream, onIceCandidate) {
+function createPeerConnection(stream, onRemoteStream, onIceCandidate, remoteAudioRef) {
   const pc = new RTCPeerConnection(PC_CONFIG);
   stream.getTracks().forEach((t) => pc.addTrack(t, stream));
   const receivedStreamRef = { current: null };
@@ -41,6 +41,10 @@ function createPeerConnection(stream, onRemoteStream, onIceCandidate) {
       if (!receivedStreamRef.current) {
         receivedStreamRef.current = remote;
         onRemoteStream(remote);
+        if (remoteAudioRef && remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = remote;
+          remoteAudioRef.current.play().catch(() => {});
+        }
       } else if (receivedStreamRef.current !== remote) {
         event.track && receivedStreamRef.current.addTrack(event.track);
       }
@@ -50,6 +54,9 @@ function createPeerConnection(stream, onRemoteStream, onIceCandidate) {
     if (event.candidate) {
       onIceCandidate(event.candidate.toJSON ? event.candidate.toJSON() : event.candidate);
     }
+  };
+  pc.oniceconnectionstatechange = () => {
+    console.log("ICE state:", pc.iceConnectionState);
   };
   return pc;
 }
@@ -72,6 +79,7 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
+  const remoteAudioRef = useRef(null);
   const pendingCandidatesRef = useRef([]);
   const callStartTimeRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -194,7 +202,8 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
         const pc = createPeerConnection(
           stream,
           (remote) => { remoteStreamRef.current = remote; setRemoteStream(remote); startCallRecording(); },
-          (candidate) => getSocket().emit("ice_candidate", { candidate })
+          (candidate) => getSocket().emit("ice_candidate", { candidate }),
+          remoteAudioRef
         );
         pcRef.current = pc;
         const offer = await pc.createOffer();
@@ -227,7 +236,8 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
         const pc = createPeerConnection(
           stream,
           (remote) => { remoteStreamRef.current = remote; setRemoteStream(remote); startCallRecording(); },
-          (candidate) => getSocket().emit("ice_candidate", { candidate })
+          (candidate) => getSocket().emit("ice_candidate", { candidate }),
+          remoteAudioRef
         );
         pcRef.current = pc;
         await pc.setRemoteDescription(data.offer);
@@ -638,6 +648,8 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
           }}
         />
       </div>
+
+      <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: "none" }} />
 
       {callStatus !== "idle" && (
         <CallOverlay
