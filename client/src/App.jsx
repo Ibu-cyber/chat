@@ -482,21 +482,12 @@ function App() {
   function createPeerConnection(stream, onRemoteStream, onIceCandidate) {
     const pc = new RTCPeerConnection(PC_CONFIG);
     stream.getTracks().forEach((t) => pc.addTrack(t, stream));
-    const receivedStreamRef = { current: null };
+    const receivedStream = new MediaStream();
     pc.ontrack = (event) => {
-      const remote = event.streams && event.streams[0]
-        ? event.streams[0]
-        : event.track
-          ? new MediaStream([event.track])
-          : null;
-      if (remote) {
-        if (!receivedStreamRef.current) {
-          receivedStreamRef.current = remote;
-          onRemoteStream(remote);
-        } else if (receivedStreamRef.current !== remote) {
-          event.track && receivedStreamRef.current.addTrack(event.track);
-        }
+      if (event.track && !receivedStream.getTracks().some((track) => track.id === event.track.id)) {
+        receivedStream.addTrack(event.track);
       }
+      onRemoteStream(new MediaStream(receivedStream.getTracks()));
     };
     pc.onicecandidate = (event) => {
       if (event.candidate) {
@@ -526,20 +517,33 @@ function App() {
   }
 
   async function getMedia(video) {
-    return navigator.mediaDevices.getUserMedia({
-      audio: {
+    const audio = {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
-      },
-      video: video
-        ? {
-            facingMode: "user",
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          }
-        : false,
-    });
+    };
+    const constraints = video
+      ? [
+          { audio, video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } } },
+          { audio, video: { facingMode: "user" } },
+          { audio, video: true },
+        ]
+      : [
+          { audio, video: false },
+          { audio: true, video: false },
+        ];
+
+    let lastError;
+    for (const constraint of constraints) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraint);
+        stream.getTracks().forEach((track) => { track.enabled = true; });
+        return stream;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError;
   }
 
   function cleanupCall() {

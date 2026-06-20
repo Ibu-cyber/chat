@@ -52,17 +52,20 @@ function CallOverlay({
   }, [localStream, status]);
 
   useEffect(() => {
-    setMediaElement(remoteVideoRef, remoteStream);
+    const videoTracks = remoteStream ? remoteStream.getVideoTracks() : [];
+    const videoStream = videoTracks.length > 0 ? new MediaStream(videoTracks) : null;
+    setMediaElement(remoteVideoRef, videoStream);
   }, [remoteStream, status]);
 
   useEffect(() => {
-    const audioStream = remoteStream
-      ? new MediaStream(remoteStream.getAudioTracks())
-      : null;
+    const audioTracks = remoteStream ? remoteStream.getAudioTracks() : [];
+    const audioStream = audioTracks.length > 0 ? new MediaStream(audioTracks) : null;
     setMediaElement(remoteAudioRef, audioStream, true);
   }, [remoteStream, status]);
 
   const partnerLabel = partnerNickname || partnerDisplayName || partnerName;
+  const hasRemoteVideo = remoteStream?.getVideoTracks().length > 0;
+  const hasRemoteAudio = remoteStream?.getAudioTracks().length > 0;
 
   function renderLocalPreview() {
     if (callType !== "video" || !localStream) return null;
@@ -75,9 +78,8 @@ function CallOverlay({
   }
 
   function enableSound() {
-    const audioStream = remoteStream
-      ? new MediaStream(remoteStream.getAudioTracks())
-      : null;
+    const audioTracks = remoteStream ? remoteStream.getAudioTracks() : [];
+    const audioStream = audioTracks.length > 0 ? new MediaStream(audioTracks) : null;
     setMediaElement(remoteAudioRef, audioStream, true);
   }
 
@@ -216,7 +218,7 @@ function CallOverlay({
       <div className="call-overlay call-active">
         {callType === "video" ? (
           <div className="call-video-stage">
-            {remoteStream ? (
+            {hasRemoteVideo ? (
               <video ref={remoteVideoRef} className="call-remote-video" autoPlay playsInline muted />
             ) : (
               <div className="call-video-waiting">
@@ -237,7 +239,7 @@ function CallOverlay({
         )}
         <div className="call-timer">{formatTime(elapsed)}</div>
         <div className="call-controls">
-          {audioBlocked && remoteStream && (
+          {audioBlocked && hasRemoteAudio && (
             <button className="call-control-button call-sound-button" onClick={enableSound} title="Enable sound">
               Sound
             </button>
