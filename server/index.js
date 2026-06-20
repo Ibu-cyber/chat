@@ -99,6 +99,22 @@ if (process.env.NODE_ENV === "production") {
 // When the client uploads a photo or audio, it goes here
 app.use("/api/upload", uploadRouter);
 
+app.post("/api/zego-config", (req, res) => {
+  const { username, password } = req.body || {};
+  const isUser1 = username === process.env.USER_1_NAME && password === process.env.USER_1_PASSWORD;
+  const isUser2 = username === process.env.USER_2_NAME && password === process.env.USER_2_PASSWORD;
+  if (!isUser1 && !isUser2) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const appID = Number(process.env.ZEGO_APP_ID);
+  const serverSecret = process.env.ZEGO_SERVER_SECRET;
+  if (!appID || !serverSecret) {
+    return res.status(500).json({ error: "ZEGOCLOUD is not configured" });
+  }
+  res.json({ appID, serverSecret });
+});
+
 // ---------- Clear Call Logs (one-time, triggers clients to clear localStorage) ----------
 app.post("/api/clear-logs", (req, res) => {
   io.emit("clear_call_logs");

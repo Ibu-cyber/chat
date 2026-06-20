@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { ZegoUIKitPrebuilt } from "@zegocloud/zego-uikit-prebuilt";
 
 function CallOverlay({
   status,
@@ -9,6 +10,8 @@ function CallOverlay({
   partnerNickname,
   localStream,
   remoteStream,
+  zegoRoomId,
+  displayName,
   onAccept,
   onReject,
   onEnd,
@@ -18,6 +21,8 @@ function CallOverlay({
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const remoteAudioRef = useRef(null);
+  const zegoContainerRef = useRef(null);
+  const zegoInstanceRef = useRef(null);
   const ringtoneRef = useRef(null);
   const timerRef = useRef(null);
   const callStartRef = useRef(null);
@@ -157,6 +162,72 @@ function CallOverlay({
     ringtoneRef.current = null;
   }
 
+  useEffect(() => {
+    if (status !== "connected" || !zegoRoomId || !zegoContainerRef.current) return;
+    let cancelled = false;
+
+    async function joinZegoRoom() {
+      try {
+        const session = JSON.parse(localStorage.getItem("heartchat_session") || "{}");
+        const response = await fetch("/api/zego-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: session.username || username, password: session.password }),
+        });
+        if (!response.ok) throw new Error("ZEGOCLOUD is not configured on the server");
+        const { appID, serverSecret } = await response.json();
+        if (cancelled) return;
+
+        const userID = String(username || "user").replace(/[^a-zA-Z0-9_]/g, "_");
+        const userName = displayName || username || "User";
+        const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
+          Number(appID),
+          serverSecret,
+          zegoRoomId,
+          userID,
+          userName,
+          60 * 60 * 12
+        );
+        const zp = ZegoUIKitPrebuilt.create(kitToken);
+        zegoInstanceRef.current = zp;
+        zp.joinRoom({
+          container: zegoContainerRef.current,
+          scenario: { mode: ZegoUIKitPrebuilt.OneONoneCall },
+          maxUsers: 2,
+          showPreJoinView: false,
+          turnOnMicrophoneWhenJoining: true,
+          turnOnCameraWhenJoining: callType === "video",
+          useFrontFacingCamera: true,
+          videoResolutionDefault: ZegoUIKitPrebuilt.VideoResolution_360P,
+          showRoomTimer: true,
+          showTextChat: false,
+          showUserList: false,
+          showRoomDetailsButton: false,
+          showScreenSharingButton: false,
+          showLayoutButton: false,
+          showPinButton: false,
+          showLeavingView: false,
+          showNonVideoUser: true,
+          showOnlyAudioUser: true,
+          onLeaveRoom: () => onEnd(),
+        });
+      } catch (error) {
+        console.error("ZEGOCLOUD join failed:", error);
+        alert(error.message || "Could not start the ZEGOCLOUD call.");
+        onEnd();
+      }
+    }
+
+    joinZegoRoom();
+    return () => {
+      cancelled = true;
+      if (zegoInstanceRef.current) {
+        try { zegoInstanceRef.current.destroy(); } catch {}
+        zegoInstanceRef.current = null;
+      }
+    };
+  }, [status, zegoRoomId, username, displayName, callType]);
+
   if (status === "ended") {
     return (
       <div className="call-overlay call-ended">
@@ -216,44 +287,11 @@ function CallOverlay({
   if (status === "connected") {
     return (
       <div className="call-overlay call-active">
-        {callType === "video" ? (
-          <div className="call-video-stage">
-            {hasRemoteVideo ? (
-              <video ref={remoteVideoRef} className="call-remote-video" autoPlay playsInline muted />
-            ) : (
-              <div className="call-video-waiting">
-                <div className="call-avatar-large">{partnerLabel?.charAt(0).toUpperCase() || "?"}</div>
-                <p>{partnerLabel || "Partner"}'s video is connecting...</p>
-              </div>
-            )}
-            <audio ref={remoteAudioRef} className="call-remote-audio" autoPlay playsInline />
-            {renderLocalPreview()}
-          </div>
-        ) : (
-          <div className="call-audio-bg">
+        <div className="zego-call-container" ref={zegoContainerRef}>
+          <div className="call-video-waiting">
             <div className="call-avatar-large">{partnerLabel?.charAt(0).toUpperCase() || "?"}</div>
-            <p className="call-partner-name">{partnerLabel}</p>
-            <p className="call-status-text">Audio call</p>
-            <audio ref={remoteAudioRef} className="call-remote-audio" autoPlay playsInline />
+            <p>Starting secure ZEGOCLOUD call...</p>
           </div>
-        )}
-        <div className="call-timer">{formatTime(elapsed)}</div>
-        <div className="call-controls">
-          {audioBlocked && hasRemoteAudio && (
-            <button className="call-control-button call-sound-button" onClick={enableSound} title="Enable sound">
-              Sound
-            </button>
-          )}
-          <button
-            className={`call-control-button ${isMuted ? "control-active" : ""}`}
-            onClick={onToggleMute}
-            title={isMuted ? "Unmute" : "Mute"}
-          >
-            {isMuted ? "🔇" : "🎤"}
-          </button>
-          <button className="call-control-button call-end-button" onClick={onEnd} title="End call">
-            End
-          </button>
         </div>
       </div>
     );
