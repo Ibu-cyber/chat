@@ -10,11 +10,42 @@ import ProfileModal from "./components/ProfileModal";
 import MediaGallery from "./components/MediaGallery";
 import "./styles/App.css";
 
+const DEFAULT_ICE_SERVERS = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  {
+    urls: [
+      "turn:openrelay.metered.ca:80",
+      "turn:openrelay.metered.ca:443",
+      "turn:openrelay.metered.ca:443?transport=tcp",
+    ],
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+];
+
+function getIceServers() {
+  const turnUrl = import.meta.env.VITE_TURN_URL;
+  const turnUsername = import.meta.env.VITE_TURN_USERNAME;
+  const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
+
+  if (turnUrl && turnUsername && turnCredential) {
+    return [
+      { urls: "stun:stun.l.google.com:19302" },
+      {
+        urls: turnUrl.split(",").map((url) => url.trim()).filter(Boolean),
+        username: turnUsername,
+        credential: turnCredential,
+      },
+    ];
+  }
+
+  return DEFAULT_ICE_SERVERS;
+}
+
 const PC_CONFIG = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-  ],
+  iceServers: getIceServers(),
+  iceCandidatePoolSize: 10,
 };
 
 function formatLastSeen(isoString) {
@@ -193,8 +224,9 @@ function App() {
           (candidate) => getSocket().emit("ice_candidate", { candidate })
         );
         pcRef.current = pc;
-        const offer = await pc.createOffer();
+        const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: callTypeRef.current === "video" });
         await pc.setLocalDescription(offer);
+        await waitForIceGathering(pc);
         getSocket().emit("offer", { offer: pc.localDescription });
         setCallStatus("connected");
         callStatusRef.current = "connected";
@@ -223,6 +255,7 @@ function App() {
         await pc.setRemoteDescription(data.offer);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
+        await waitForIceGathering(pc);
         getSocket().emit("answer", { answer: pc.localDescription });
         for (const c of pendingCandidatesRef.current) {
           await pc.addIceCandidate(c);
@@ -474,6 +507,22 @@ function App() {
       console.log("ICE state:", pc.iceConnectionState);
     };
     return pc;
+  }
+
+  function waitForIceGathering(pc) {
+    if (pc.iceGatheringState === "complete") return Promise.resolve();
+    return new Promise((resolve) => {
+      const timeout = setTimeout(done, 2000);
+      function done() {
+        clearTimeout(timeout);
+        pc.removeEventListener("icegatheringstatechange", handleStateChange);
+        resolve();
+      }
+      function handleStateChange() {
+        if (pc.iceGatheringState === "complete") done();
+      }
+      pc.addEventListener("icegatheringstatechange", handleStateChange);
+    });
   }
 
   async function getMedia(video) {
