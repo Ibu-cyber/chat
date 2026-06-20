@@ -121,6 +121,13 @@ function App() {
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
   const pendingCandidatesRef = useRef([]);
+  const callIdRef = useRef(null);
+  const callRoleRef = useRef(null);
+  const makingOfferRef = useRef(false);
+  const ignoreOfferRef = useRef(false);
+  const settingRemoteAnswerRef = useRef(false);
+  const seenCandidatesRef = useRef(new Set());
+  const iceRestartTimerRef = useRef(null);
   const callStartTimeRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recordingChunksRef = useRef([]);
@@ -195,6 +202,14 @@ function App() {
       } catch {}
     }
 
+    function handleSocketReconnect() {
+      if (callIdRef.current && callStatusRef.current !== "idle") {
+        console.debug("[call] socket reconnected during active call", { callId: callIdRef.current });
+        socket.emit("call_reconnect", { callId: callIdRef.current });
+        restartIce();
+      }
+    }
+
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
     }
@@ -206,98 +221,68 @@ function App() {
     socket.on("partner_profile_update", handlePartnerProfileUpdate);
     socket.on("partner_display_name_update", handlePartnerDisplayNameUpdate);
     socket.on("partner_bg_update", handlePartnerBgUpdate);
+    socket.on("connect", handleSocketReconnect);
 
     // ---- Call signaling ----
+    socket.on("call_created", (data) => {
+      callIdRef.current = data.callId;
+      console.debug("[call] created", data);
+    });
+
     socket.on("incoming_call", (data) => {
-      if (callStatusRef.current === "idle") {
-        setCallType(data.type);
-        callTypeRef.current = data.type;
-        setCallStatus("ringing");
-        callStatusRef.current = "ringing";
+      console.debug("[call] incoming", data);
+      if (callStatusRef.current !== "idle") {
+        socket.emit("call_rejected", { callId: data.callId, reason: "busy" });
+        return;
       }
+      callIdRef.current = data.callId;
+      callRoleRef.current = "callee";
+      setCallType(data.type);
+      callTypeRef.current = data.type;
+      setCallStatus("ringing");
+      callStatusRef.current = "ringing";
     });
 
-    socket.on("call_accepted", async () => {
-      if (callStatusRef.current === "calling" && localStreamRef.current) {
-        callStartTimeRef.current = Date.now();
-        const stream = localStreamRef.current;
-        const pc = createPeerConnection(
-          stream,
-          (remote) => { remoteStreamRef.current = remote; setRemoteStream(remote); startCallRecording(); },
-          (candidate) => getSocket().emit("ice_candidate", { candidate })
-        );
-        pcRef.current = pc;
-        const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: callTypeRef.current === "video" });
-        await pc.setLocalDescription(offer);
-        await waitForIceGathering(pc);
-        getSocket().emit("offer", { offer: pc.localDescription });
-        setCallStatus("connected");
-        callStatusRef.current = "connected";
-      }
+    socket.on("call_accepted", async (data) => {
+      console.debug("[call] accepted", data);
+      if (callStatusRef.current !== "calling" || !localStreamRef.current) return;
+      callIdRef.current = data.callId || callIdRef.current;
+      callStartTimeRef.current = Date.now();
+      ensurePeerConnection();
+      setCallStatus("connected");
+      callStatusRef.current = "connected";
+      await sendOffer(false);
     });
 
-    socket.on("call_rejected", () => {
-      if (callStatusRef.current === "calling") {
-        addCallLog({ type: callTypeRef.current, direction: "outgoing", status: "declined", partner: partnerName, timestamp: new Date().toISOString() });
-        cleanupCall();
-        setCallStatus("idle");
-        callStatusRef.current = "idle";
+    socket.on("call_rejected", (data) => {
+      console.debug("[call] rejected", data);
+      if (callStatusRef.current === "calling" || callStatusRef.current === "ringing") {
+        addCallLog({ type: callTypeRef.current, direction: callStatusRef.current === "calling" ? "outgoing" : "incoming", status: "declined", partner: partnerName, timestamp: new Date().toISOString() });
       }
+      cleanupCall();
+      setCallStatus("idle");
+      callStatusRef.current = "idle";
     });
 
-    socket.on("offer", async (data) => {
-      if (callStatusRef.current === "ringing" && localStreamRef.current) {
-        callStartTimeRef.current = Date.now();
-        const stream = localStreamRef.current;
-        const pc = createPeerConnection(
-          stream,
-          (remote) => { remoteStreamRef.current = remote; setRemoteStream(remote); startCallRecording(); },
-          (candidate) => getSocket().emit("ice_candidate", { candidate })
-        );
-        pcRef.current = pc;
-        await pc.setRemoteDescription(data.offer);
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        await waitForIceGathering(pc);
-        getSocket().emit("answer", { answer: pc.localDescription });
-        for (const c of pendingCandidatesRef.current) {
-          await pc.addIceCandidate(c);
-        }
-        pendingCandidatesRef.current = [];
-        setCallStatus("connected");
-        callStatusRef.current = "connected";
-      }
+    socket.on("webrtc_offer", handleRemoteOffer);
+    socket.on("webrtc_answer", handleRemoteAnswer);
+    socket.on("webrtc_ice_candidate", handleRemoteCandidate);
+
+    socket.on("call_peer_disconnected", (data) => {
+      console.debug("[call] peer socket disconnected", data);
     });
 
-    socket.on("answer", async (data) => {
-      if (pcRef.current && !pcRef.current.remoteDescription) {
-        try {
-          await pcRef.current.setRemoteDescription(data.answer);
-          for (const c of pendingCandidatesRef.current) {
-            await pcRef.current.addIceCandidate(c);
-          }
-          pendingCandidatesRef.current = [];
-        } catch (err) {
-          console.error("Error setting remote description:", err);
-        }
-      }
+    socket.on("call_peer_reconnected", async (data) => {
+      console.debug("[call] peer socket reconnected", data);
+      if (data.callId === callIdRef.current) await restartIce();
     });
 
-    socket.on("ice_candidate", async (data) => {
-      if (pcRef.current) {
-        try {
-          if (pcRef.current.remoteDescription) {
-            await pcRef.current.addIceCandidate(data.candidate);
-          } else {
-            pendingCandidatesRef.current.push(data.candidate);
-          }
-        } catch (err) {
-          console.error("Error adding ICE candidate:", err);
-        }
-      }
+    socket.on("call_error", (data) => {
+      console.warn("[call] signaling error", data);
     });
 
-    socket.on("call_ended", async () => {
+    socket.on("call_ended", async (data = {}) => {
+      if (data.callId && callIdRef.current && data.callId !== callIdRef.current) return;
       if (callStatusRef.current === "idle") return;
       const duration = callStartTimeRef.current
         ? Math.round((Date.now() - callStartTimeRef.current) / 1000)
@@ -352,12 +337,17 @@ function App() {
       socket.off("partner_profile_update", handlePartnerProfileUpdate);
       socket.off("partner_display_name_update", handlePartnerDisplayNameUpdate);
       socket.off("partner_bg_update", handlePartnerBgUpdate);
+      socket.off("connect", handleSocketReconnect);
+      socket.off("call_created");
       socket.off("incoming_call");
       socket.off("call_accepted");
       socket.off("call_rejected");
-      socket.off("offer");
-      socket.off("answer");
-      socket.off("ice_candidate");
+      socket.off("webrtc_offer");
+      socket.off("webrtc_answer");
+      socket.off("webrtc_ice_candidate");
+      socket.off("call_peer_disconnected");
+      socket.off("call_peer_reconnected");
+      socket.off("call_error");
       socket.off("call_ended");
       socket.off("missed_calls_list");
     };
@@ -482,25 +472,177 @@ function App() {
     return null;
   }
 
-  function createPeerConnection(stream, onRemoteStream, onIceCandidate) {
+  function sendCallSignal(event, payload = {}) {
+    const socket = getSocket();
+    if (!socket || !callIdRef.current) return;
+    socket.emit(event, { ...payload, callId: callIdRef.current });
+  }
+
+  function ensurePeerConnection() {
+    if (pcRef.current) return pcRef.current;
+    if (!localStreamRef.current) return null;
+    pcRef.current = createPeerConnection(localStreamRef.current);
+    return pcRef.current;
+  }
+
+  function createPeerConnection(stream) {
     const pc = new RTCPeerConnection(PC_CONFIG);
-    stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+    console.debug("[webrtc] create peer connection", { callId: callIdRef.current, role: callRoleRef.current, config: PC_CONFIG });
+
+    stream.getTracks().forEach((track) => {
+      track.enabled = true;
+      pc.addTrack(track, stream);
+    });
+
     const receivedStream = new MediaStream();
     pc.ontrack = (event) => {
+      console.debug("[webrtc] remote track", { kind: event.track?.kind, id: event.track?.id, streams: event.streams?.length });
       if (event.track && !receivedStream.getTracks().some((track) => track.id === event.track.id)) {
         receivedStream.addTrack(event.track);
       }
-      onRemoteStream(new MediaStream(receivedStream.getTracks()));
+      const remote = new MediaStream(receivedStream.getTracks());
+      remoteStreamRef.current = remote;
+      setRemoteStream(remote);
+      startCallRecording();
     };
+
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        onIceCandidate(event.candidate.toJSON ? event.candidate.toJSON() : event.candidate);
+        sendCallSignal("webrtc_ice_candidate", {
+          candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate,
+        });
       }
     };
-    pc.oniceconnectionstatechange = () => {
-      console.log("ICE state:", pc.iceConnectionState);
+
+    pc.onconnectionstatechange = () => {
+      console.debug("[webrtc] connection state", pc.connectionState);
+      if (pc.connectionState === "failed") restartIce();
+      if (pc.connectionState === "connected") {
+        if (!callStartTimeRef.current) callStartTimeRef.current = Date.now();
+        if (callStatusRef.current !== "connected") {
+          setCallStatus("connected");
+          callStatusRef.current = "connected";
+        }
+      }
     };
+
+    pc.oniceconnectionstatechange = () => {
+      console.debug("[webrtc] ICE state", pc.iceConnectionState);
+      if (pc.iceConnectionState === "failed") restartIce();
+      if (pc.iceConnectionState === "disconnected") {
+        if (iceRestartTimerRef.current) clearTimeout(iceRestartTimerRef.current);
+        iceRestartTimerRef.current = setTimeout(() => restartIce(), 2500);
+      }
+    };
+
+    pc.onicegatheringstatechange = () => console.debug("[webrtc] ICE gathering", pc.iceGatheringState);
+    pc.onsignalingstatechange = () => console.debug("[webrtc] signaling state", pc.signalingState);
     return pc;
+  }
+
+  async function sendOffer(iceRestart = false) {
+    const pc = ensurePeerConnection();
+    if (!pc || makingOfferRef.current || pc.signalingState !== "stable") return;
+    try {
+      makingOfferRef.current = true;
+      const offer = await pc.createOffer({ iceRestart, offerToReceiveAudio: true, offerToReceiveVideo: callTypeRef.current === "video" });
+      await pc.setLocalDescription(offer);
+      await waitForIceGathering(pc);
+      console.debug("[webrtc] send offer", { callId: callIdRef.current, iceRestart });
+      sendCallSignal("webrtc_offer", { description: pc.localDescription, offer: pc.localDescription, iceRestart });
+    } catch (err) {
+      console.error("[webrtc] offer failed", err);
+    } finally {
+      makingOfferRef.current = false;
+    }
+  }
+
+  async function handleRemoteOffer(data) {
+    if (data.callId && callIdRef.current && data.callId !== callIdRef.current) return;
+    if (!localStreamRef.current) return;
+    callIdRef.current = data.callId || callIdRef.current;
+    const pc = ensurePeerConnection();
+    if (!pc) return;
+    const description = data.description || data.offer;
+    const readyForOffer = !makingOfferRef.current && (pc.signalingState === "stable" || settingRemoteAnswerRef.current);
+    const offerCollision = description?.type === "offer" && !readyForOffer;
+    ignoreOfferRef.current = callRoleRef.current === "caller" && offerCollision;
+    if (ignoreOfferRef.current) {
+      console.warn("[webrtc] ignored colliding offer", { callId: data.callId });
+      return;
+    }
+    try {
+      console.debug("[webrtc] receive offer", { callId: data.callId });
+      await pc.setRemoteDescription(description);
+      await flushPendingCandidates();
+      await pc.setLocalDescription(await pc.createAnswer());
+      await waitForIceGathering(pc);
+      sendCallSignal("webrtc_answer", { description: pc.localDescription, answer: pc.localDescription });
+      if (callStatusRef.current !== "connected") {
+        setCallStatus("connected");
+        callStatusRef.current = "connected";
+      }
+    } catch (err) {
+      console.error("[webrtc] handling offer failed", err);
+    }
+  }
+
+  async function handleRemoteAnswer(data) {
+    if (data.callId && data.callId !== callIdRef.current) return;
+    const pc = pcRef.current;
+    if (!pc || pc.signalingState === "stable") return;
+    const description = data.description || data.answer;
+    try {
+      console.debug("[webrtc] receive answer", { callId: data.callId });
+      settingRemoteAnswerRef.current = true;
+      await pc.setRemoteDescription(description);
+      await flushPendingCandidates();
+    } catch (err) {
+      console.error("[webrtc] handling answer failed", err);
+    } finally {
+      settingRemoteAnswerRef.current = false;
+    }
+  }
+
+  async function handleRemoteCandidate(data) {
+    if (data.callId && callIdRef.current && data.callId !== callIdRef.current) return;
+    const candidate = data.candidate;
+    if (!candidate) return;
+    const key = candidate.candidate || JSON.stringify(candidate);
+    if (seenCandidatesRef.current.has(key)) return;
+    seenCandidatesRef.current.add(key);
+    const pc = pcRef.current;
+    if (!pc || !pc.remoteDescription) {
+      pendingCandidatesRef.current.push(candidate);
+      return;
+    }
+    try {
+      await pc.addIceCandidate(candidate);
+    } catch (err) {
+      if (!ignoreOfferRef.current) console.error("[webrtc] add ICE candidate failed", err);
+    }
+  }
+
+  async function flushPendingCandidates() {
+    const pc = pcRef.current;
+    if (!pc || !pc.remoteDescription || pendingCandidatesRef.current.length === 0) return;
+    const candidates = pendingCandidatesRef.current.splice(0);
+    for (const candidate of candidates) {
+      try {
+        await pc.addIceCandidate(candidate);
+      } catch (err) {
+        console.error("[webrtc] flush ICE candidate failed", err);
+      }
+    }
+  }
+
+  async function restartIce() {
+    const pc = pcRef.current;
+    if (!pc || !callIdRef.current || callStatusRef.current === "idle") return;
+    if (pc.signalingState !== "stable") return;
+    console.debug("[webrtc] restarting ICE", { callId: callIdRef.current });
+    if (typeof pc.restartIce === "function") pc.restartIce();
+    await sendOffer(true);
   }
 
   function waitForIceGathering(pc) {
@@ -550,6 +692,10 @@ function App() {
   }
 
   function cleanupCall() {
+    if (iceRestartTimerRef.current) {
+      clearTimeout(iceRestartTimerRef.current);
+      iceRestartTimerRef.current = null;
+    }
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
@@ -566,11 +712,20 @@ function App() {
     }
     setIsMuted(false);
     pendingCandidatesRef.current = [];
+    seenCandidatesRef.current = new Set();
+    callIdRef.current = null;
+    callRoleRef.current = null;
+    makingOfferRef.current = false;
+    ignoreOfferRef.current = false;
+    settingRemoteAnswerRef.current = false;
   }
 
   async function startCall(type) {
     if (callStatusRef.current !== "idle" || !partnerName) return;
     try {
+      const callId = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      callIdRef.current = callId;
+      callRoleRef.current = "caller";
       callTypeRef.current = type;
       setCallType(type);
       const stream = await getMedia(type === "video");
@@ -578,9 +733,10 @@ function App() {
       setLocalStream(stream);
       setCallStatus("calling");
       callStatusRef.current = "calling";
-      getSocket().emit("call_user", { caller: currentUser, type });
+      getSocket().emit("call_user", { callId, caller: currentUser, type });
     } catch (err) {
       console.error("Media error:", err);
+      cleanupCall();
       alert("Could not access camera/microphone. Please check permissions.");
     }
   }
@@ -591,11 +747,12 @@ function App() {
       const stream = await getMedia(callTypeRef.current === "video");
       localStreamRef.current = stream;
       setLocalStream(stream);
-      getSocket().emit("call_accepted", { callee: currentUser });
+      callRoleRef.current = "callee";
+      getSocket().emit("call_accepted", { callId: callIdRef.current, callee: currentUser });
     } catch (err) {
       console.error("Media error:", err);
       alert("Could not access camera/microphone. Please check permissions.");
-      getSocket().emit("call_rejected", { callee: currentUser });
+      getSocket().emit("call_rejected", { callId: callIdRef.current, callee: currentUser });
       cleanupCall();
       setCallStatus("idle");
       callStatusRef.current = "idle";
@@ -605,7 +762,7 @@ function App() {
   function rejectCall() {
     if (callStatusRef.current !== "ringing") return;
     addCallLog({ type: callTypeRef.current, direction: "incoming", status: "declined", partner: partnerName, timestamp: new Date().toISOString() });
-    getSocket().emit("call_rejected", { callee: currentUser });
+    getSocket().emit("call_rejected", { callId: callIdRef.current, callee: currentUser });
     cleanupCall();
     setCallStatus("idle");
     callStatusRef.current = "idle";
@@ -615,7 +772,7 @@ function App() {
     const duration = callStartTimeRef.current
       ? Math.round((Date.now() - callStartTimeRef.current) / 1000)
       : 0;
-    getSocket().emit("call_ended");
+    getSocket().emit("call_ended", { callId: callIdRef.current });
     const blob = await stopCallRecording();
     const recordingUrl = await uploadRecording(blob);
     addCallLog({ type: callTypeRef.current, direction: callStatusRef.current === "calling" ? "outgoing" : "incoming", status: "ended", duration, recordingUrl, partner: partnerName, timestamp: new Date().toISOString() });

@@ -20,6 +20,7 @@ const cors = require("cors"); // Allows different origins to connect
 const path = require("path"); // Helps with file/folder paths
 const connectDatabase = require("./db"); // Our MongoDB connection
 const Message = require("./models/Message"); // The Message blueprint
+const Presence = require("./models/Presence"); // For persisting lastSeen across restarts
 const uploadRouter = require("./routes/upload"); // File upload handler
 
 // =======================================
@@ -115,7 +116,30 @@ const userPresence = {};
 const userProfiles = {};
 const displayNames = {};
 const missedCalls = {};
+const activeCalls = new Map();
 let sharedBg = null;
+
+function createCallId() {
+  return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getActiveCallForUser(username) {
+  for (const call of activeCalls.values()) {
+    if ((call.caller === username || call.callee === username) && call.status !== "ended") {
+      return call;
+    }
+  }
+  return null;
+}
+
+function getPeerForCall(call, username) {
+  if (!call) return null;
+  return call.caller === username ? call.callee : call.caller;
+}
+
+function emitCallError(socket, message, callId = null) {
+  socket.emit("call_error", { callId, message });
+}
 
 io.on("connection", async (socket) => {
   const username = socket.username;
@@ -129,8 +153,15 @@ io.on("connection", async (socket) => {
   userPresence[username] = { online: true };
   socket.broadcast.emit("presence_update", { username, online: true });
 
+  // Load persisted lastSeen from DB (survives restarts)
+  let partnerLastSeen = null;
+  try {
+    const p = await Presence.findOne({ username: partnerName });
+    if (p && p.lastSeen) partnerLastSeen = p.lastSeen;
+  } catch {}
+
   // Send partner's presence to the newly connected user
-  const partnerPresence = userPresence[partnerName];
+  const partnerPresence = userPresence[partnerName] || (partnerLastSeen ? { online: false, lastSeen: partnerLastSeen } : null);
   if (partnerPresence) {
     socket.emit("presence_update", { username: partnerName, ...partnerPresence });
   }
@@ -159,10 +190,11 @@ io.on("connection", async (socket) => {
       partnerDisplayName: displayNames[partnerName] || null,
       sharedBg,
     });
-
   } catch (error) {
     console.error("Error loading messages:", error.message);
   }
+
+  // ---------- Request missed calls (request-based, no race condition) ----------
 
   // ---------- Request missed calls (request-based, no race condition) ----------
   socket.on("request_missed_calls", () => {
@@ -298,13 +330,33 @@ io.on("connection", async (socket) => {
 
   // ---------- Audio/Video Call Signaling ----------
   socket.on("call_user", (data) => {
-    io.to(partnerName).emit("incoming_call", data);
+    const callId = data.callId || createCallId();
+    const call = {
+      id: callId,
+      caller: username,
+      callee: partnerName,
+      type: data.type || "audio",
+      status: "ringing",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    activeCalls.set(callId, call);
+
+    io.to(partnerName).emit("incoming_call", {
+      callId,
+      caller: username,
+      type: call.type,
+      timestamp: new Date().toISOString(),
+    });
+
+    socket.emit("call_created", { callId, callee: partnerName, type: call.type });
+
     const partnerOnline = userPresence[partnerName]?.online ?? false;
     if (!partnerOnline) {
       if (!missedCalls[partnerName]) missedCalls[partnerName] = [];
       missedCalls[partnerName].push({
-        caller: data.caller,
-        type: data.type,
+        caller: username,
+        type: call.type,
         timestamp: new Date().toISOString(),
       });
       if (missedCalls[partnerName].length > 10) missedCalls[partnerName].shift();
@@ -312,27 +364,86 @@ io.on("connection", async (socket) => {
   });
 
   socket.on("call_accepted", (data) => {
-    io.to(partnerName).emit("call_accepted", data);
+    const call = activeCalls.get(data.callId) || getActiveCallForUser(username);
+    if (!call || call.callee !== username) return emitCallError(socket, "Call no longer exists", data.callId);
+    call.status = "accepted";
+    call.updatedAt = Date.now();
+    io.to(call.caller).emit("call_accepted", { callId: call.id, callee: username, type: call.type });
   });
 
   socket.on("call_rejected", (data) => {
-    io.to(partnerName).emit("call_rejected", data);
+    const call = activeCalls.get(data.callId) || getActiveCallForUser(username);
+    const peer = getPeerForCall(call, username) || partnerName;
+    if (call) {
+      call.status = "ended";
+      activeCalls.delete(call.id);
+    }
+    io.to(peer).emit("call_rejected", { callId: data.callId || call?.id, by: username });
   });
 
+  socket.on("webrtc_offer", (data) => {
+    const call = activeCalls.get(data.callId);
+    const peer = getPeerForCall(call, username);
+    if (!call || !peer) return emitCallError(socket, "Invalid offer call", data.callId);
+    call.status = "connected";
+    call.updatedAt = Date.now();
+    io.to(peer).emit("webrtc_offer", { ...data, from: username });
+  });
+
+  socket.on("webrtc_answer", (data) => {
+    const call = activeCalls.get(data.callId);
+    const peer = getPeerForCall(call, username);
+    if (!call || !peer) return emitCallError(socket, "Invalid answer call", data.callId);
+    call.status = "connected";
+    call.updatedAt = Date.now();
+    io.to(peer).emit("webrtc_answer", { ...data, from: username });
+  });
+
+  socket.on("webrtc_ice_candidate", (data) => {
+    const call = activeCalls.get(data.callId);
+    const peer = getPeerForCall(call, username);
+    if (!call || !peer || !data.candidate) return;
+    io.to(peer).emit("webrtc_ice_candidate", { ...data, from: username });
+  });
+
+  // Backward-compatible event names for older clients during rolling deploys.
   socket.on("offer", (data) => {
-    io.to(partnerName).emit("offer", data);
+    const call = activeCalls.get(data.callId) || getActiveCallForUser(username);
+    const peer = getPeerForCall(call, username);
+    if (!call || !peer) return;
+    io.to(peer).emit("webrtc_offer", { ...data, callId: call.id, description: data.description || data.offer, from: username });
   });
 
   socket.on("answer", (data) => {
-    io.to(partnerName).emit("answer", data);
+    const call = activeCalls.get(data.callId) || getActiveCallForUser(username);
+    const peer = getPeerForCall(call, username);
+    if (!call || !peer) return;
+    io.to(peer).emit("webrtc_answer", { ...data, callId: call.id, description: data.description || data.answer, from: username });
   });
 
   socket.on("ice_candidate", (data) => {
-    io.to(partnerName).emit("ice_candidate", data);
+    const call = activeCalls.get(data.callId) || getActiveCallForUser(username);
+    const peer = getPeerForCall(call, username);
+    if (!call || !peer || !data.candidate) return;
+    io.to(peer).emit("webrtc_ice_candidate", { ...data, callId: call.id, from: username });
   });
 
-  socket.on("call_ended", () => {
-    io.to(partnerName).emit("call_ended");
+  socket.on("call_reconnect", (data) => {
+    const call = activeCalls.get(data.callId);
+    const peer = getPeerForCall(call, username);
+    if (!call || !peer) return;
+    call.updatedAt = Date.now();
+    io.to(peer).emit("call_peer_reconnected", { callId: call.id, username });
+  });
+
+  socket.on("call_ended", (data = {}) => {
+    const call = activeCalls.get(data.callId) || getActiveCallForUser(username);
+    const peer = getPeerForCall(call, username) || partnerName;
+    if (call) {
+      call.status = "ended";
+      activeCalls.delete(call.id);
+    }
+    io.to(peer).emit("call_ended", { callId: data.callId || call?.id, by: username });
   });
 
   // ---------- When someone disconnects ----------
@@ -341,7 +452,11 @@ io.on("connection", async (socket) => {
     const lastSeen = new Date().toISOString();
     userPresence[socket.username] = { online: false, lastSeen };
     socket.broadcast.emit("presence_update", { username: socket.username, online: false, lastSeen });
-    io.to(partnerName).emit("call_ended");
+    const call = getActiveCallForUser(username);
+    if (call) {
+      const peer = getPeerForCall(call, username);
+      io.to(peer).emit("call_peer_disconnected", { callId: call.id, username });
+    }
   });
 });
 

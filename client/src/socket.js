@@ -30,6 +30,12 @@ export function connectToServer(username, password) {
       username: username, // Your name
       password: password, // Your secret password
     },
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 500,
+    reconnectionDelayMax: 5000,
+    timeout: 20000,
+    transports: ["websocket", "polling"],
   });
 
   // Return the socket for use by the calling code
