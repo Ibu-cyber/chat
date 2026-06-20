@@ -23,11 +23,13 @@ function CallOverlay({
   const remoteAudioRef = useRef(null);
   const zegoContainerRef = useRef(null);
   const zegoInstanceRef = useRef(null);
+  const zegoJoinedRef = useRef(false);
   const ringtoneRef = useRef(null);
   const timerRef = useRef(null);
   const callStartRef = useRef(null);
   const [elapsed, setElapsed] = useState(0);
   const [audioBlocked, setAudioBlocked] = useState(false);
+  const [isAccepting, setIsAccepting] = useState(false);
 
   function formatTime(seconds) {
     const m = Math.floor(seconds / 60).toString().padStart(2, "0");
@@ -71,6 +73,16 @@ function CallOverlay({
   const partnerLabel = partnerNickname || partnerDisplayName || partnerName;
   const hasRemoteVideo = remoteStream?.getVideoTracks().length > 0;
   const hasRemoteAudio = remoteStream?.getAudioTracks().length > 0;
+
+  async function handleAcceptClick() {
+    if (isAccepting) return;
+    setIsAccepting(true);
+    try {
+      await onAccept();
+    } finally {
+      setTimeout(() => setIsAccepting(false), 1500);
+    }
+  }
 
   function renderLocalPreview() {
     if (callType !== "video" || !localStream) return null;
@@ -190,6 +202,7 @@ function CallOverlay({
         );
         const zp = ZegoUIKitPrebuilt.create(kitToken);
         zegoInstanceRef.current = zp;
+        zegoJoinedRef.current = false;
         zp.joinRoom({
           container: zegoContainerRef.current,
           scenario: { mode: ZegoUIKitPrebuilt.OneONoneCall },
@@ -209,7 +222,12 @@ function CallOverlay({
           showLeavingView: false,
           showNonVideoUser: true,
           showOnlyAudioUser: true,
-          onLeaveRoom: () => onEnd(),
+          onJoinRoom: () => {
+            zegoJoinedRef.current = true;
+          },
+          onLeaveRoom: () => {
+            if (zegoJoinedRef.current) onEnd();
+          },
         });
       } catch (error) {
         console.error("ZEGOCLOUD join failed:", error);
@@ -225,6 +243,7 @@ function CallOverlay({
         try { zegoInstanceRef.current.destroy(); } catch {}
         zegoInstanceRef.current = null;
       }
+      zegoJoinedRef.current = false;
     };
   }, [status, zegoRoomId, username, displayName, callType]);
 
@@ -272,8 +291,8 @@ function CallOverlay({
             {callType === "video" ? "Video call" : "Audio call"} incoming
           </p>
           <div className="call-incoming-actions">
-            <button className="call-accept-button" onClick={onAccept}>
-              {callType === "video" ? "📷" : "📞"} Accept
+            <button className="call-accept-button" onClick={handleAcceptClick} disabled={isAccepting}>
+              {isAccepting ? "Opening..." : `${callType === "video" ? "📷" : "📞"} Accept`}
             </button>
             <button className="call-reject-button" onClick={onReject}>
               Decline
