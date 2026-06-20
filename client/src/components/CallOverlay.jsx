@@ -209,7 +209,10 @@ function CallOverlay({
           container: zegoContainerRef.current,
           scenario: { mode: ZegoUIKitPrebuilt.OneONoneCall },
           maxUsers: 2,
-          showPreJoinView: false,
+          showPreJoinView: true,
+          preJoinViewConfig: {
+            title: callType === "video" ? "Start video call" : "Start audio call",
+          },
           turnOnMicrophoneWhenJoining: true,
           turnOnCameraWhenJoining: callType === "video",
           useFrontFacingCamera: true,
@@ -219,9 +222,7 @@ function CallOverlay({
           showUserList: false,
           showRoomDetailsButton: false,
           showScreenSharingButton: false,
-          showLayoutButton: false,
-          showPinButton: false,
-          showLeavingView: false,
+          showLeavingView: true,
           showNonVideoUser: true,
           showOnlyAudioUser: true,
           onJoinRoom: () => {
@@ -266,7 +267,7 @@ function CallOverlay({
         <div className="zego-call-container" ref={zegoContainerRef}>
           <div className="call-video-waiting">
             <div className="call-avatar-large">{partnerLabel?.charAt(0).toUpperCase() || "?"}</div>
-            <p>Calling {partnerLabel || "partner"}...</p>
+            <p>Opening ZEGOCLOUD. Tap Join when it appears.</p>
           </div>
         </div>
       </div>
@@ -279,8 +280,8 @@ function CallOverlay({
         <div className="call-overlay call-active">
           <div className="zego-call-container" ref={zegoContainerRef}>
             <div className="call-video-waiting">
-              <div className="call-avatar-large">{partnerLabel?.charAt(0).toUpperCase() || "?"}</div>
-              <p>Opening secure ZEGOCLOUD call...</p>
+            <div className="call-avatar-large">{partnerLabel?.charAt(0).toUpperCase() || "?"}</div>
+              <p>Opening ZEGOCLOUD. Tap Join when it appears.</p>
             </div>
           </div>
         </div>
@@ -314,7 +315,7 @@ function CallOverlay({
         <div className="zego-call-container" ref={zegoContainerRef}>
           <div className="call-video-waiting">
             <div className="call-avatar-large">{partnerLabel?.charAt(0).toUpperCase() || "?"}</div>
-            <p>Starting secure ZEGOCLOUD call...</p>
+            <p>Opening ZEGOCLOUD. Tap Join when it appears.</p>
           </div>
         </div>
       </div>
