@@ -32,7 +32,11 @@ function CallOverlay({
 
   function setMediaElement(ref, stream, reportBlocked = false) {
     const el = ref.current;
-    if (!el || !stream) return;
+    if (!el) return;
+    if (!stream) {
+      el.srcObject = null;
+      return;
+    }
     el.srcObject = stream;
     el.play()
       .then(() => {
@@ -52,7 +56,10 @@ function CallOverlay({
   }, [remoteStream, status]);
 
   useEffect(() => {
-    setMediaElement(remoteAudioRef, remoteStream, true);
+    const audioStream = remoteStream
+      ? new MediaStream(remoteStream.getAudioTracks())
+      : null;
+    setMediaElement(remoteAudioRef, audioStream, true);
   }, [remoteStream, status]);
 
   const partnerLabel = partnerNickname || partnerDisplayName || partnerName;
@@ -68,7 +75,10 @@ function CallOverlay({
   }
 
   function enableSound() {
-    setMediaElement(remoteAudioRef, remoteStream, true);
+    const audioStream = remoteStream
+      ? new MediaStream(remoteStream.getAudioTracks())
+      : null;
+    setMediaElement(remoteAudioRef, audioStream, true);
   }
 
   useEffect(() => {

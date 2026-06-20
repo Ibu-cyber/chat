@@ -526,7 +526,20 @@ function App() {
   }
 
   async function getMedia(video) {
-    return navigator.mediaDevices.getUserMedia({ audio: true, video });
+    return navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: video
+        ? {
+            facingMode: "user",
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          }
+        : false,
+    });
   }
 
   function cleanupCall() {
