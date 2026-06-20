@@ -73,6 +73,7 @@ function CallOverlay({
   const partnerLabel = partnerNickname || partnerDisplayName || partnerName;
   const hasRemoteVideo = remoteStream?.getVideoTracks().length > 0;
   const hasRemoteAudio = remoteStream?.getAudioTracks().length > 0;
+  const shouldJoinZego = !!zegoRoomId && (status === "calling" || status === "connected" || isAccepting);
 
   async function handleAcceptClick() {
     if (isAccepting) return;
@@ -175,7 +176,7 @@ function CallOverlay({
   }
 
   useEffect(() => {
-    if (status !== "connected" || !zegoRoomId || !zegoContainerRef.current) return;
+    if (!shouldJoinZego || !zegoRoomId || !zegoContainerRef.current || zegoInstanceRef.current) return;
     let cancelled = false;
 
     async function joinZegoRoom() {
@@ -245,7 +246,7 @@ function CallOverlay({
       }
       zegoJoinedRef.current = false;
     };
-  }, [status, zegoRoomId, username, displayName, callType]);
+  }, [shouldJoinZego, zegoRoomId, username, displayName, callType]);
 
   if (status === "ended") {
     return (
@@ -260,28 +261,31 @@ function CallOverlay({
 
   if (status === "calling") {
     return (
-      <div className="call-overlay">
-        <div className="call-content">
-          <div className="call-avatar-large">{partnerLabel?.charAt(0).toUpperCase() || "?"}</div>
-          <p className="call-partner-name">{partnerLabel}</p>
-          <p className="call-status-text">
-            {callType === "video" ? "Video calling" : "Calling"}...
-          </p>
-          <div className="call-status-ringing">
-            <span className="ringing-dot"></span>
-            <span className="ringing-dot"></span>
-            <span className="ringing-dot"></span>
+      <div className="call-overlay call-active">
+        <div className="zego-call-container" ref={zegoContainerRef}>
+          <div className="call-video-waiting">
+            <div className="call-avatar-large">{partnerLabel?.charAt(0).toUpperCase() || "?"}</div>
+            <p>Calling {partnerLabel || "partner"}...</p>
           </div>
-          <button className="call-end-button" onClick={onEnd}>
-            End
-          </button>
-          {renderLocalPreview()}
         </div>
       </div>
     );
   }
 
   if (status === "ringing") {
+    if (isAccepting) {
+      return (
+        <div className="call-overlay call-active">
+          <div className="zego-call-container" ref={zegoContainerRef}>
+            <div className="call-video-waiting">
+              <div className="call-avatar-large">{partnerLabel?.charAt(0).toUpperCase() || "?"}</div>
+              <p>Opening secure ZEGOCLOUD call...</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="call-overlay">
         <div className="call-content">
