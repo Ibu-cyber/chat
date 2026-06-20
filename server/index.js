@@ -117,6 +117,8 @@ io.on("connection", async (socket) => {
     ? process.env.USER_2_NAME
     : process.env.USER_1_NAME;
 
+  socket.join(username);
+
   // ---------- Mark user online & notify partner ----------
   userPresence[username] = { online: true };
   socket.broadcast.emit("presence_update", { username, online: true });
@@ -287,7 +289,7 @@ io.on("connection", async (socket) => {
 
   // ---------- Audio/Video Call Signaling ----------
   socket.on("call_user", (data) => {
-    socket.broadcast.emit("incoming_call", data);
+    io.to(partnerName).emit("incoming_call", data);
     const partnerOnline = userPresence[partnerName]?.online ?? false;
     if (!partnerOnline) {
       if (!missedCalls[partnerName]) missedCalls[partnerName] = [];
@@ -301,27 +303,27 @@ io.on("connection", async (socket) => {
   });
 
   socket.on("call_accepted", (data) => {
-    socket.broadcast.emit("call_accepted", data);
+    io.to(partnerName).emit("call_accepted", data);
   });
 
   socket.on("call_rejected", (data) => {
-    socket.broadcast.emit("call_rejected", data);
+    io.to(partnerName).emit("call_rejected", data);
   });
 
   socket.on("offer", (data) => {
-    socket.broadcast.emit("offer", data);
+    io.to(partnerName).emit("offer", data);
   });
 
   socket.on("answer", (data) => {
-    socket.broadcast.emit("answer", data);
+    io.to(partnerName).emit("answer", data);
   });
 
   socket.on("ice_candidate", (data) => {
-    socket.broadcast.emit("ice_candidate", data);
+    io.to(partnerName).emit("ice_candidate", data);
   });
 
   socket.on("call_ended", () => {
-    socket.broadcast.emit("call_ended");
+    io.to(partnerName).emit("call_ended");
   });
 
   // ---------- When someone disconnects ----------
@@ -330,7 +332,7 @@ io.on("connection", async (socket) => {
     const lastSeen = new Date().toISOString();
     userPresence[socket.username] = { online: false, lastSeen };
     socket.broadcast.emit("presence_update", { username: socket.username, online: false, lastSeen });
-    socket.broadcast.emit("call_ended");
+    io.to(partnerName).emit("call_ended");
   });
 });
 
