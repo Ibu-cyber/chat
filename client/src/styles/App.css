@@ -872,6 +872,75 @@ body {
   flex-shrink: 0;
 }
 
+.input-menu-toggle {
+  display: none;
+}
+
+.input-desktop-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.input-menu-wrapper {
+  position: relative;
+  display: none;
+}
+
+.input-menu-popup {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  background: var(--bg-surface, #ffffff);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 100;
+  min-width: 160px;
+  border: 1px solid var(--border-color);
+}
+
+.input-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  border-radius: 12px;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.input-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.input-menu-item span {
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .input-menu-toggle {
+    display: flex;
+  }
+
+  .input-menu-wrapper {
+    display: block;
+  }
+
+  .input-desktop-actions {
+    display: none;
+  }
+}
+
 .input-action-button:hover {
   background: var(--bg-hover);
 }
