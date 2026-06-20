@@ -134,6 +134,10 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
   useEffect(() => {
     const socket = getSocket();
 
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+
     socket.on("user_typing", (data) => {
       if (data.username !== username) {
         setTypingUser(data.username);
@@ -152,6 +156,24 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
       if (onPartnerInfo) {
         onPartnerInfo(data.partnerName, data.partnerOnline, data.partnerLastSeen);
       }
+    });
+
+    socket.on("missed_call", (data) => {
+      addCallLog({
+        type: data.type,
+        direction: "incoming",
+        status: "missed",
+        partner: partnerName,
+        timestamp: data.timestamp,
+        duration: 0,
+      });
+      const name = partnerNickname || partnerDisplayName || partnerName;
+      const callTypeLabel = data.type === "video" ? "Video" : "Audio";
+      const notification = new Notification(`${callTypeLabel} call from ${name}`, {
+        body: "You missed a call while you were away.",
+        icon: "/favicon.ico",
+      });
+      setTimeout(() => notification.close(), 5000);
     });
 
     socket.emit("get_partner_info");
@@ -280,6 +302,7 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
       socket.off("user_stop_typing");
       socket.off("message_error");
       socket.off("partner_info");
+      socket.off("missed_call");
       socket.off("incoming_call");
       socket.off("call_accepted");
       socket.off("call_rejected");

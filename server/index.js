@@ -108,6 +108,7 @@ app.use("/api/upload", uploadRouter);
 const userPresence = {};
 const userProfiles = {};
 const displayNames = {};
+const missedCalls = {};
 let sharedBg = null;
 
 io.on("connection", async (socket) => {
@@ -150,6 +151,13 @@ io.on("connection", async (socket) => {
       partnerDisplayName: displayNames[partnerName] || null,
       sharedBg,
     });
+
+    if (missedCalls[username] && missedCalls[username].length > 0) {
+      for (const call of missedCalls[username]) {
+        socket.emit("missed_call", call);
+      }
+      missedCalls[username] = [];
+    }
   } catch (error) {
     console.error("Error loading messages:", error.message);
   }
@@ -280,6 +288,16 @@ io.on("connection", async (socket) => {
   // ---------- Audio/Video Call Signaling ----------
   socket.on("call_user", (data) => {
     socket.broadcast.emit("incoming_call", data);
+    const partnerOnline = userPresence[partnerName]?.online ?? false;
+    if (!partnerOnline) {
+      if (!missedCalls[partnerName]) missedCalls[partnerName] = [];
+      missedCalls[partnerName].push({
+        caller: data.caller,
+        type: data.type,
+        timestamp: new Date().toISOString(),
+      });
+      if (missedCalls[partnerName].length > 10) missedCalls[partnerName].shift();
+    }
   });
 
   socket.on("call_accepted", (data) => {
