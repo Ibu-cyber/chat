@@ -1599,6 +1599,10 @@ body {
   font-weight: 600;
 }
 
+.call-remote-audio {
+  display: none;
+}
+
 .call-audio-bg {
   display: flex;
   flex-direction: column;
@@ -1641,6 +1645,13 @@ body {
 
 .call-control-button:hover {
   background: rgba(255, 255, 255, 0.25);
+}
+
+.call-sound-button {
+  width: auto;
+  min-width: 78px;
+  padding: 0 18px;
+  border-radius: 999px;
 }
 
 .control-active {

@@ -17,10 +17,12 @@ function CallOverlay({
 }) {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
   const ringtoneRef = useRef(null);
   const timerRef = useRef(null);
   const callStartRef = useRef(null);
   const [elapsed, setElapsed] = useState(0);
+  const [audioBlocked, setAudioBlocked] = useState(false);
 
   function formatTime(seconds) {
     const m = Math.floor(seconds / 60).toString().padStart(2, "0");
@@ -28,11 +30,17 @@ function CallOverlay({
     return `${m}:${s}`;
   }
 
-  function setMediaElement(ref, stream) {
+  function setMediaElement(ref, stream, reportBlocked = false) {
     const el = ref.current;
     if (!el || !stream) return;
     el.srcObject = stream;
-    el.play().catch(() => {});
+    el.play()
+      .then(() => {
+        if (reportBlocked) setAudioBlocked(false);
+      })
+      .catch(() => {
+        if (reportBlocked) setAudioBlocked(true);
+      });
   }
 
   useEffect(() => {
@@ -41,6 +49,10 @@ function CallOverlay({
 
   useEffect(() => {
     setMediaElement(remoteVideoRef, remoteStream);
+  }, [remoteStream, status]);
+
+  useEffect(() => {
+    setMediaElement(remoteAudioRef, remoteStream, true);
   }, [remoteStream, status]);
 
   const partnerLabel = partnerNickname || partnerDisplayName || partnerName;
@@ -53,6 +65,10 @@ function CallOverlay({
         <span className="call-video-label">You</span>
       </div>
     );
+  }
+
+  function enableSound() {
+    setMediaElement(remoteAudioRef, remoteStream, true);
   }
 
   useEffect(() => {
@@ -198,6 +214,7 @@ function CallOverlay({
                 <p>{partnerLabel || "Partner"}'s video is connecting...</p>
               </div>
             )}
+            <audio ref={remoteAudioRef} className="call-remote-audio" autoPlay playsInline />
             {renderLocalPreview()}
           </div>
         ) : (
@@ -205,11 +222,16 @@ function CallOverlay({
             <div className="call-avatar-large">{partnerLabel?.charAt(0).toUpperCase() || "?"}</div>
             <p className="call-partner-name">{partnerLabel}</p>
             <p className="call-status-text">Audio call</p>
-            <audio ref={remoteVideoRef} autoPlay playsInline />
+            <audio ref={remoteAudioRef} className="call-remote-audio" autoPlay playsInline />
           </div>
         )}
         <div className="call-timer">{formatTime(elapsed)}</div>
         <div className="call-controls">
+          {audioBlocked && remoteStream && (
+            <button className="call-control-button call-sound-button" onClick={enableSound} title="Enable sound">
+              Sound
+            </button>
+          )}
           <button
             className={`call-control-button ${isMuted ? "control-active" : ""}`}
             onClick={onToggleMute}

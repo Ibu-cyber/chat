@@ -86,7 +86,6 @@ function App() {
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
-  const remoteAudioRef = useRef(null);
   const pendingCandidatesRef = useRef([]);
   const callStartTimeRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -461,10 +460,6 @@ function App() {
         if (!receivedStreamRef.current) {
           receivedStreamRef.current = remote;
           onRemoteStream(remote);
-          if (remoteAudioRef.current) {
-            remoteAudioRef.current.srcObject = remote;
-            remoteAudioRef.current.play().catch(() => {});
-          }
         } else if (receivedStreamRef.current !== remote) {
           event.track && receivedStreamRef.current.addTrack(event.track);
         }
@@ -779,7 +774,6 @@ function App() {
             <div className={`chat-layout ${isMobile ? "chat-layout-mobile" : ""}`}>
               {isMobile ? renderMobile() : renderDesktop()}
             </div>
-            <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: "none" }} />
             {callStatus !== "idle" && (
               <CallOverlay
                 status={callStatus}
