@@ -1533,24 +1533,70 @@ body {
   padding: 20px;
 }
 
-.call-remote-video {
+.call-video-stage {
+  position: relative;
   flex: 1;
   width: 100%;
-  object-fit: contain;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 18px;
   background: #000;
-  border-radius: 12px;
+}
+
+.call-remote-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+
+.call-video-waiting {
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: #ffffff;
+  text-align: center;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.9));
+}
+
+.call-local-preview {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  width: min(34vw, 320px);
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 3px solid rgba(255, 255, 255, 0.45);
+  background: #000;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
 }
 
 .call-local-video {
-  position: absolute;
-  bottom: 100px;
-  right: 20px;
-  width: 160px;
-  height: 120px;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  border-radius: 10px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  background: #000;
+  transform: scaleX(-1);
+}
+
+.call-video-label {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .call-audio-bg {
@@ -2631,14 +2677,28 @@ body {
     font-size: 30px;
   }
 
-  .call-local-video {
-    width: 100px;
-    height: 80px;
-    bottom: 80px;
-    right: 10px;
+  .call-active {
+    padding: 10px;
+  }
+
+  .call-video-stage {
+    border-radius: 12px;
+  }
+
+  .call-local-preview {
+    right: 12px;
+    bottom: 12px;
+    width: min(46vw, 190px);
+    border-radius: 14px;
+    border-width: 2px;
   }
 
   .call-remote-video {
     border-radius: 0;
+  }
+
+  .call-video-waiting {
+    min-height: 260px;
+    padding: 20px;
   }
 }

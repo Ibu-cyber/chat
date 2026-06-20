@@ -28,28 +28,32 @@ function CallOverlay({
     return `${m}:${s}`;
   }
 
-  function setVideoElement(ref, stream) {
+  function setMediaElement(ref, stream) {
     const el = ref.current;
-    if (!el) {
-      console.error('Video element not found');
-      return;
-    }
-    if (!stream) {
-      console.error('Stream not available');
-      return;
-    }
-    console.log('Setting stream for', el === localVideoRef.current ? 'local' : 'remote', 'video');
+    if (!el || !stream) return;
     el.srcObject = stream;
-    el.play().catch((error) => { console.error('Video play error:', error); });
+    el.play().catch(() => {});
   }
 
   useEffect(() => {
-    setVideoElement(localVideoRef, localStream);
+    setMediaElement(localVideoRef, localStream);
   }, [localStream, status]);
 
   useEffect(() => {
-    setVideoElement(remoteVideoRef, remoteStream);
+    setMediaElement(remoteVideoRef, remoteStream);
   }, [remoteStream, status]);
+
+  const partnerLabel = partnerNickname || partnerDisplayName || partnerName;
+
+  function renderLocalPreview() {
+    if (callType !== "video" || !localStream) return null;
+    return (
+      <div className="call-local-preview" aria-label="Your camera preview">
+        <video ref={localVideoRef} className="call-local-video" autoPlay playsInline muted />
+        <span className="call-video-label">You</span>
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (status === "calling" || status === "ringing") {
@@ -140,8 +144,8 @@ function CallOverlay({
     return (
       <div className="call-overlay">
         <div className="call-content">
-          <div className="call-avatar-large">{(partnerNickname || partnerDisplayName || partnerName)?.charAt(0).toUpperCase() || "?"}</div>
-          <p className="call-partner-name">{partnerNickname || partnerDisplayName || partnerName}</p>
+          <div className="call-avatar-large">{partnerLabel?.charAt(0).toUpperCase() || "?"}</div>
+          <p className="call-partner-name">{partnerLabel}</p>
           <p className="call-status-text">
             {callType === "video" ? "Video calling" : "Calling"}...
           </p>
@@ -153,6 +157,7 @@ function CallOverlay({
           <button className="call-end-button" onClick={onEnd}>
             End
           </button>
+          {renderLocalPreview()}
         </div>
       </div>
     );
@@ -162,8 +167,8 @@ function CallOverlay({
     return (
       <div className="call-overlay">
         <div className="call-content">
-          <div className="call-avatar-large">{(partnerNickname || partnerDisplayName || partnerName)?.charAt(0).toUpperCase() || "?"}</div>
-          <p className="call-partner-name">{partnerNickname || partnerDisplayName || partnerName}</p>
+          <div className="call-avatar-large">{partnerLabel?.charAt(0).toUpperCase() || "?"}</div>
+          <p className="call-partner-name">{partnerLabel}</p>
           <p className="call-status-text">
             {callType === "video" ? "Video call" : "Audio call"} incoming
           </p>
@@ -184,14 +189,21 @@ function CallOverlay({
     return (
       <div className="call-overlay call-active">
         {callType === "video" ? (
-          <>
-            <video ref={remoteVideoRef} className="call-remote-video" autoPlay playsInline />
-            <video ref={localVideoRef} className="call-local-video" autoPlay playsInline muted />
-          </>
+          <div className="call-video-stage">
+            {remoteStream ? (
+              <video ref={remoteVideoRef} className="call-remote-video" autoPlay playsInline muted />
+            ) : (
+              <div className="call-video-waiting">
+                <div className="call-avatar-large">{partnerLabel?.charAt(0).toUpperCase() || "?"}</div>
+                <p>{partnerLabel || "Partner"}'s video is connecting...</p>
+              </div>
+            )}
+            {renderLocalPreview()}
+          </div>
         ) : (
           <div className="call-audio-bg">
-            <div className="call-avatar-large">{(partnerNickname || partnerDisplayName || partnerName)?.charAt(0).toUpperCase() || "?"}</div>
-            <p className="call-partner-name">{partnerNickname || partnerDisplayName || partnerName}</p>
+            <div className="call-avatar-large">{partnerLabel?.charAt(0).toUpperCase() || "?"}</div>
+            <p className="call-partner-name">{partnerLabel}</p>
             <p className="call-status-text">Audio call</p>
             <audio ref={remoteVideoRef} autoPlay playsInline />
           </div>
