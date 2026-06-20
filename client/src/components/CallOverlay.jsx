@@ -30,9 +30,17 @@ function CallOverlay({
 
   function setVideoElement(ref, stream) {
     const el = ref.current;
-    if (!el || !stream) return;
+    if (!el) {
+      console.error('Video element not found');
+      return;
+    }
+    if (!stream) {
+      console.error('Stream not available');
+      return;
+    }
+    console.log('Setting stream for', el === localVideoRef.current ? 'local' : 'remote', 'video');
     el.srcObject = stream;
-    el.play().catch(() => {});
+    el.play().catch((error) => { console.error('Video play error:', error); });
   }
 
   useEffect(() => {
