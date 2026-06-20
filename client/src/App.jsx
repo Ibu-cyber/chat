@@ -287,13 +287,20 @@ function App() {
 
     socket.on("missed_calls_list", (calls) => {
       for (const call of calls) {
-        addCallLog({ type: call.type, direction: "incoming", status: "missed", partner: partnerName, timestamp: call.timestamp, duration: 0 });
+        addCallLog({
+          type: call.type || "audio",
+          direction: "incoming",
+          status: "missed",
+          partner: call.caller || partnerName,
+          timestamp: call.timestamp,
+          duration: 0,
+        });
       }
       if (calls.length > 0) {
         setMissedCallCount((c) => c + calls.length);
-        const name = partnerNickname || partnerDisplayName || partnerName;
+        const callerName = calls[0].caller || partnerNickname || partnerDisplayName || partnerName;
         if ("Notification" in window && Notification.permission === "granted") {
-          new Notification(`Missed call from ${name}`, { body: `You missed ${calls.length} call(s) while away.` });
+          new Notification(`Missed call from ${callerName}`, { body: `You missed ${calls.length} call(s) while away.` });
         }
       }
     });
