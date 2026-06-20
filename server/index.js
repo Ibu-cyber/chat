@@ -320,7 +320,7 @@ io.on("connection", async (socket) => {
 // SECTION 7: START THE SERVER
 // =======================================
 
-const PORT = 8000;
+const PORT = process.env.PORT || 8000;
 server.listen(PORT, () => {
   console.log("");
   console.log("  ╔═══════════════════════════════════╗");

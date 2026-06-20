@@ -184,7 +184,8 @@ function CallOverlay({
           <div className="call-audio-bg">
             <div className="call-avatar-large">{(partnerNickname || partnerDisplayName || partnerName)?.charAt(0).toUpperCase() || "?"}</div>
             <p className="call-partner-name">{partnerNickname || partnerDisplayName || partnerName}</p>
-            <p className="call-status-text">{callType === "video" ? "Video call" : "Audio call"}</p>
+            <p className="call-status-text">Audio call</p>
+            <audio ref={remoteVideoRef} autoPlay playsInline />
           </div>
         )}
         <div className="call-timer">{formatTime(elapsed)}</div>
