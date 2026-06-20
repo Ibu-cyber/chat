@@ -115,6 +115,7 @@ function App() {
   const [isMuted, setIsMuted] = useState(false);
   const [missedCallCount, setMissedCallCount] = useState(0);
   const [zegoRoomId, setZegoRoomId] = useState(null);
+  const [zegoRoomActive, setZegoRoomActive] = useState(false);
 
   const callStatusRef = useRef("idle");
   const callTypeRef = useRef(null);
@@ -238,6 +239,7 @@ function App() {
       }
       callIdRef.current = data.callId;
       setZegoRoomId(data.callId);
+      setZegoRoomActive(false);
       callRoleRef.current = "callee";
       setCallType(data.type);
       callTypeRef.current = data.type;
@@ -250,6 +252,7 @@ function App() {
       if (callStatusRef.current !== "calling") return;
       callIdRef.current = data.callId || callIdRef.current;
       setZegoRoomId(callIdRef.current);
+      setZegoRoomActive(true);
       callStartTimeRef.current = Date.now();
       setCallStatus("connected");
       callStatusRef.current = "connected";
@@ -716,6 +719,7 @@ function App() {
     seenCandidatesRef.current = new Set();
     callIdRef.current = null;
     setZegoRoomId(null);
+    setZegoRoomActive(false);
     callRoleRef.current = null;
     makingOfferRef.current = false;
     ignoreOfferRef.current = false;
@@ -728,6 +732,7 @@ function App() {
       const callId = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
       callIdRef.current = callId;
       setZegoRoomId(callId);
+      setZegoRoomActive(true);
       callRoleRef.current = "caller";
       callTypeRef.current = type;
       setCallType(type);
@@ -748,6 +753,7 @@ function App() {
       getSocket().emit("call_accepted", { callId: callIdRef.current, callee: currentUser });
       callStartTimeRef.current = Date.now();
       setZegoRoomId(callIdRef.current);
+      setZegoRoomActive(true);
       setCallStatus("connected");
       callStatusRef.current = "connected";
     } catch (err) {
@@ -1012,6 +1018,7 @@ function App() {
                 localStream={localStream}
                 remoteStream={remoteStream}
                 zegoRoomId={zegoRoomId}
+                zegoRoomActive={zegoRoomActive}
                 displayName={displayName}
                 onAccept={acceptCall}
                 onReject={rejectCall}

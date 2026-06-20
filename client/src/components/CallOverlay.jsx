@@ -11,6 +11,7 @@ function CallOverlay({
   localStream,
   remoteStream,
   zegoRoomId,
+  zegoRoomActive,
   displayName,
   onAccept,
   onReject,
@@ -73,7 +74,7 @@ function CallOverlay({
   const partnerLabel = partnerNickname || partnerDisplayName || partnerName;
   const hasRemoteVideo = remoteStream?.getVideoTracks().length > 0;
   const hasRemoteAudio = remoteStream?.getAudioTracks().length > 0;
-  const shouldJoinZego = !!zegoRoomId && (status === "calling" || status === "connected" || isAccepting);
+  const shouldJoinZego = !!zegoRoomId && zegoRoomActive;
 
   async function handleAcceptClick() {
     if (isAccepting) return;
@@ -273,7 +274,7 @@ function CallOverlay({
   }
 
   if (status === "ringing") {
-    if (isAccepting) {
+    if (zegoRoomActive) {
       return (
         <div className="call-overlay call-active">
           <div className="zego-call-container" ref={zegoContainerRef}>
