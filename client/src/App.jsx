@@ -285,6 +285,11 @@ function App() {
       setTimeout(() => { setCallStatus("idle"); callStatusRef.current = "idle"; callStartTimeRef.current = null; }, 2000);
     });
 
+    socket.on("clear_call_logs", () => {
+      localStorage.removeItem("heartchat_call_logs");
+      setMissedCallCount(0);
+    });
+
     socket.on("missed_calls_list", (calls) => {
       for (const call of calls) {
         addCallLog({

@@ -98,6 +98,12 @@ if (process.env.NODE_ENV === "production") {
 // When the client uploads a photo or audio, it goes here
 app.use("/api/upload", uploadRouter);
 
+// ---------- Clear Call Logs (one-time, triggers clients to clear localStorage) ----------
+app.post("/api/clear-logs", (req, res) => {
+  io.emit("clear_call_logs");
+  res.json({ ok: true });
+});
+
 // =======================================
 // SECTION 6: SOCKET.IO EVENT HANDLING
 // =======================================
