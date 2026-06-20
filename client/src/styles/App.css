@@ -1487,6 +1487,8 @@ body {
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   transition: all 0.2s;
 }
 

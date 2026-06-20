@@ -78,9 +78,10 @@ function CallOverlay({
   const hasRemoteVideo = remoteStream?.getVideoTracks().length > 0;
   const hasRemoteAudio = remoteStream?.getAudioTracks().length > 0;
   const shouldJoinZego = !!zegoRoomId && zegoRoomActive;
+  const shouldPrepareZego = !!zegoRoomId && (status === "calling" || status === "ringing" || status === "connected");
 
   useEffect(() => {
-    if (!shouldJoinZego || zegoConfig) return;
+    if (!shouldPrepareZego || zegoConfig) return;
     let cancelled = false;
 
     async function loadZegoConfig() {
@@ -102,13 +103,32 @@ function CallOverlay({
 
     loadZegoConfig();
     return () => { cancelled = true; };
-  }, [shouldJoinZego, zegoConfig, username]);
+  }, [shouldPrepareZego, zegoConfig, username]);
 
-  async function handleAcceptClick() {
+  function openMobileZegoPage() {
+    if (!zegoRoomId) return false;
+    const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+    if (!isMobileDevice) return false;
+    const userID = String(username || "user").replace(/[^a-zA-Z0-9_]/g, "_");
+    const userName = displayName || username || "User";
+    const params = new URLSearchParams({
+      roomID: zegoRoomId,
+      userID,
+      userName,
+      type: callType === "audio" ? "audio" : "video",
+    });
+    window.location.href = `/zego-call?${params.toString()}`;
+    return true;
+  }
+
+  async function handleAcceptClick(event) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     if (isAccepting) return;
     setIsAccepting(true);
     try {
       await onAccept();
+      openMobileZegoPage();
     } finally {
       setTimeout(() => setIsAccepting(false), 1500);
     }
@@ -137,6 +157,11 @@ function CallOverlay({
     try {
       const userID = String(username || "user").replace(/[^a-zA-Z0-9_]/g, "_");
       const userName = displayName || username || "User";
+      if (openMobileZegoPage()) {
+        setZegoStarting(false);
+        return;
+      }
+
       const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(
         Number(zegoConfig.appID),
         zegoConfig.serverSecret,
@@ -271,7 +296,13 @@ function CallOverlay({
         <div className="call-avatar-large">{partnerLabel?.charAt(0).toUpperCase() || "?"}</div>
         <p>{message}</p>
         {zegoError && <p className="call-zego-error">{zegoError}</p>}
-        <button className="call-accept-button" onClick={startZegoRoom} disabled={!zegoConfig || zegoStarting}>
+        <button
+          type="button"
+          className="call-accept-button"
+          onClick={startZegoRoom}
+          onTouchEnd={(event) => { event.preventDefault(); startZegoRoom(); }}
+          disabled={!zegoConfig || zegoStarting}
+        >
           {zegoStarting ? "Starting..." : zegoConfig ? "Start secure call" : "Preparing call..."}
         </button>
       </div>
@@ -319,7 +350,14 @@ function CallOverlay({
             {callType === "video" ? "Video call" : "Audio call"} incoming
           </p>
           <div className="call-incoming-actions">
-            <button className="call-accept-button" onClick={handleAcceptClick} disabled={isAccepting}>
+            <button
+              type="button"
+              className="call-accept-button"
+              onClick={handleAcceptClick}
+              onTouchEnd={handleAcceptClick}
+              onPointerUp={handleAcceptClick}
+              disabled={isAccepting}
+            >
               {isAccepting ? "Opening..." : `${callType === "video" ? "📷" : "📞"} Accept`}
             </button>
             <button className="call-reject-button" onClick={onReject}>

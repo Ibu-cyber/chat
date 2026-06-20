@@ -115,6 +115,70 @@ app.post("/api/zego-config", (req, res) => {
   res.json({ appID, serverSecret });
 });
 
+app.get("/zego-call", (req, res) => {
+  const appID = Number(process.env.ZEGO_APP_ID);
+  const serverSecret = process.env.ZEGO_SERVER_SECRET;
+  if (!appID || !serverSecret) {
+    return res.status(500).send("ZEGOCLOUD is not configured");
+  }
+
+  const roomID = String(req.query.roomID || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+  const userID = String(req.query.userID || "user").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+  const userName = String(req.query.userName || userID).replace(/[<>&"']/g, "").slice(0, 64);
+  const type = req.query.type === "audio" ? "audio" : "video";
+
+  if (!roomID) return res.status(400).send("Missing roomID");
+
+  res.type("html").send(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>HeartChat Call</title>
+  <style>
+    html, body, #root { width: 100%; height: 100%; margin: 0; background: #000; overflow: hidden; }
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    #loading { color: #fff; height: 100%; display: grid; place-items: center; text-align: center; padding: 24px; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <div id="root"><div id="loading">Starting secure call...<br />Allow camera and microphone when asked.</div></div>
+  <script src="https://unpkg.com/@zegocloud/zego-uikit-prebuilt/zego-uikit-prebuilt.js"></script>
+  <script>
+    const appID = ${JSON.stringify(appID)};
+    const serverSecret = ${JSON.stringify(serverSecret)};
+    const roomID = ${JSON.stringify(roomID)};
+    const userID = ${JSON.stringify(userID)};
+    const userName = ${JSON.stringify(userName)};
+    const callType = ${JSON.stringify(type)};
+
+    try {
+      const kitToken = ZegoUIKitPrebuilt.generateKitTokenForTest(appID, serverSecret, roomID, userID, userName, 60 * 60 * 12);
+      const zp = ZegoUIKitPrebuilt.create(kitToken);
+      zp.joinRoom({
+        container: document.querySelector('#root'),
+        scenario: { mode: ZegoUIKitPrebuilt.OneONoneCall },
+        maxUsers: 2,
+        showPreJoinView: true,
+        preJoinViewConfig: { title: callType === 'video' ? 'Start video call' : 'Start audio call' },
+        turnOnMicrophoneWhenJoining: true,
+        turnOnCameraWhenJoining: callType === 'video',
+        useFrontFacingCamera: true,
+        showTextChat: false,
+        showUserList: false,
+        showRoomDetailsButton: false,
+        showScreenSharingButton: false,
+        showRoomTimer: true,
+      });
+    } catch (error) {
+      document.querySelector('#root').innerHTML = '<div id="loading">Could not start call:<br />' + (error && error.message ? error.message : error) + '</div>';
+      console.error(error);
+    }
+  </script>
+</body>
+</html>`);
+});
+
 // ---------- Clear Call Logs (one-time, triggers clients to clear localStorage) ----------
 app.post("/api/clear-logs", (req, res) => {
   io.emit("clear_call_logs");
