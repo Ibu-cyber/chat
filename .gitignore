@@ -1,0 +1,20 @@
+# Sensitive credentials
+.env
+
+# Dependencies
+node_modules/
+
+# Build output
+client/dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Uploaded files (keep server/uploads/ empty in git)
+server/uploads/*
+!server/uploads/.gitkeep
