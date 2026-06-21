@@ -23,6 +23,7 @@ const Message = require("./models/Message"); // The Message blueprint
 const Presence = require("./models/Presence"); // For persisting lastSeen across restarts
 const uploadRouter = require("./routes/upload"); // File upload handler
 const archiver = require("archiver");
+const AdmZip = require("adm-zip");
 const fs = require("fs");
 
 // =======================================
@@ -102,6 +103,67 @@ if (process.env.NODE_ENV === "production") {
 app.use("/api/upload", uploadRouter);
 
 
+
+// ---------- Restore: upload a backup ZIP and restore messages to database ----------
+const restoreUpload = require("multer")({ dest: require("path").join(__dirname, "uploads") });
+
+app.post("/api/restore", restoreUpload.single("backup"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No backup file uploaded." });
+    }
+
+    const zip = new AdmZip(req.file.path);
+    const entries = zip.getEntries();
+    const msgEntry = entries.find(e => e.entryName === "messages.json");
+    if (!msgEntry) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: "Backup file must contain messages.json" });
+    }
+
+    const messages = JSON.parse(msgEntry.getData().toString("utf8"));
+    if (!Array.isArray(messages)) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: "messages.json must be an array" });
+    }
+
+    // Replace all messages in the database with backup messages
+    const Message = require("./models/Message");
+    await Message.deleteMany({});
+    if (messages.length > 0) {
+      await Message.insertMany(messages);
+    }
+
+    // Restore uploads folder if present
+    const uploadsDir = path.join(__dirname, "uploads");
+    const uploadEntry = entries.find(e => e.entryName.startsWith("uploads/") && !e.isDirectory);
+    if (uploadEntry) {
+      entries.forEach(entry => {
+        if (entry.entryName.startsWith("uploads/") && !entry.isDirectory) {
+          const relPath = entry.entryName.slice("uploads/".length);
+          const outPath = path.join(uploadsDir, relPath);
+          const outDir = path.dirname(outPath);
+          if (!fs.existsSync(outDir)) {
+            fs.mkdirSync(outDir, { recursive: true });
+          }
+          fs.writeFileSync(outPath, entry.getData());
+        }
+      });
+    }
+
+    // Clean up temp file
+    fs.unlinkSync(req.file.path);
+
+    console.log(`Restored ${messages.length} messages from backup`);
+    res.json({ ok: true, count: messages.length });
+  } catch (err) {
+    console.error("Restore failed:", err);
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: "Restore failed: " + err.message });
+  }
+});
 
 // ---------- Clear Call Logs (one-time, triggers clients to clear localStorage) ----------
 app.post("/api/clear-logs", (req, res) => {
