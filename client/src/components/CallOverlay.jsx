@@ -25,6 +25,7 @@ function CallOverlay({
   const callStartRef = useRef(null);
   const [elapsed, setElapsed] = useState(0);
   const [isAccepting, setIsAccepting] = useState(false);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(false);
 
   function formatTime(seconds) {
     const m = Math.floor(seconds / 60).toString().padStart(2, "0");
@@ -153,6 +154,24 @@ function CallOverlay({
     }
   }
 
+  async function toggleSpeaker() {
+    const audioEl = remoteAudioRef.current;
+    if (!audioEl || !audioEl.setSinkId) return;
+    try {
+      if (!isSpeakerOn) {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const speaker = devices.find(d => d.kind === "audiooutput" && d.deviceId !== "default" && d.deviceId !== "communications");
+        await audioEl.setSinkId(speaker ? speaker.deviceId : "");
+        setIsSpeakerOn(true);
+      } else {
+        await audioEl.setSinkId("default");
+        setIsSpeakerOn(false);
+      }
+    } catch (err) {
+      console.warn("Speaker toggle failed:", err);
+    }
+  }
+
   if (status === "ended") {
     return (
       <div className="call-overlay call-ended">
@@ -254,6 +273,21 @@ function CallOverlay({
               </svg>
             </button>
             <button
+              className={`call-control-button ${isSpeakerOn ? "control-active" : ""}`}
+              onClick={toggleSpeaker}
+              title={isSpeakerOn ? "Earpiece" : "Speaker"}
+            >
+              {isSpeakerOn ? (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                </svg>
+              ) : (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" />
+                </svg>
+              )}
+            </button>
+            <button
               className="call-control-button"
               onClick={onEnd}
               title="End call"
@@ -289,6 +323,21 @@ function CallOverlay({
             ) : (
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+            )}
+          </button>
+          <button
+            className={`call-control-button ${isSpeakerOn ? "control-active" : ""}`}
+            onClick={toggleSpeaker}
+            title={isSpeakerOn ? "Earpiece" : "Speaker"}
+          >
+            {isSpeakerOn ? (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+              </svg>
+            ) : (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" />
               </svg>
             )}
           </button>
