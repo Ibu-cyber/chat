@@ -210,9 +210,9 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
             onSend={handleSendMessage}
             onTyping={handleTyping}
             onStopTyping={handleStopTyping}
-            onAttachImage={() => document.getElementById("imageInput").click()}
-            onAttachDocument={() => document.getElementById("docInput").click()}
-            onRecordAudio={() => setShowRecorder(true)}
+            onAttachImage={() => { handleStopTyping(); document.getElementById("imageInput").click(); }}
+            onAttachDocument={() => { handleStopTyping(); document.getElementById("docInput").click(); }}
+            onRecordAudio={() => { handleStopTyping(); setShowRecorder(true); }}
           />
         )}
 

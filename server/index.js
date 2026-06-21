@@ -217,6 +217,7 @@ io.on("connection", async (socket) => {
         audioUrl: data.audioUrl || null,
         fileUrl: data.fileUrl || null,
         fileName: data.fileName || null,
+        replyTo: data.replyTo || null,
       });
 
       const savedMessage = await newMessage.save();
@@ -232,6 +233,19 @@ io.on("connection", async (socket) => {
     } catch (error) {
       console.error("Error saving message:", error.message);
       socket.emit("message_error", "Failed to save message. Please try again.");
+    }
+  });
+
+  // ---------- Listen for message deletion ----------
+  socket.on("delete_message", async (data) => {
+    try {
+      const msg = await Message.findById(data.messageId);
+      if (!msg) return;
+      if (msg.sender !== socket.username) return;
+      await Message.findByIdAndDelete(data.messageId);
+      io.emit("message_deleted", { messageId: data.messageId });
+    } catch (error) {
+      console.error("Error deleting message:", error.message);
     }
   });
 

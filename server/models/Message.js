@@ -57,6 +57,12 @@ const messageSchema = new mongoose.Schema({
     default: "sent",
   },
 
+  // The message this is replying to (if any)
+  replyTo: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null,
+  },
+
   // When was this message sent?
   // MongoDB will automatically set this to the current time
   createdAt: {

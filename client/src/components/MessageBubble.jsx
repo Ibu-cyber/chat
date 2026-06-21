@@ -1,8 +1,13 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 
-function MessageBubble({ message, isOwn, partnerDisplayName, partnerNickname, onImageClick }) {
+function MessageBubble({ message, isOwn, partnerDisplayName, partnerNickname, onImageClick, onReply, onDelete }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioRef, setAudioRef] = useState(null);
+  const [swiping, setSwiping] = useState(false);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const animFrame = useRef(null);
 
   function formatTime(dateString) {
     const date = new Date(dateString);
@@ -62,13 +67,68 @@ function MessageBubble({ message, isOwn, partnerDisplayName, partnerNickname, on
     return "📄";
   }
 
+  function handleTouchStart(e) {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    setSwipeOffset(0);
+    setSwiping(false);
+  }
 
+  function handleTouchMove(e) {
+    const dx = e.touches[0].clientX - touchStartX.current;
+    const dy = Math.abs(e.touches[0].clientY - touchStartY.current);
+    if (dy > 20) { setSwipeOffset(0); return; }
+    if (dx > 10) {
+      setSwiping(true);
+      const offset = Math.min(dx, 100);
+      setSwipeOffset(offset);
+    }
+  }
+
+  function handleTouchEnd() {
+    if (swipeOffset > 50) {
+      if (onReply) onReply(message);
+    }
+    setSwipeOffset(0);
+    setSwiping(false);
+  }
+
+  function handleReplyClick(e) {
+    e.stopPropagation();
+    if (onReply) onReply(message);
+  }
+
+  function handleDeleteClick(e) {
+    e.stopPropagation();
+    if (onDelete) onDelete(message._id);
+  }
+
+  const wrapperStyle = swiping ? { transform: `translateX(${swipeOffset}px)`, transition: "none", touchAction: "none" } : { transform: "translateX(0)", transition: "transform 0.3s ease" };
+
+  const replyPreview = message.replyTo ? (
+    <div className="reply-preview">
+      <div className="reply-preview-bar" />
+      <div className="reply-preview-content">
+        <span className="reply-preview-sender">{message.replyTo.sender === message.sender ? "You" : (partnerNickname || partnerDisplayName || message.replyTo.sender)}</span>
+        <span className="reply-preview-text">{message.replyTo.text || (message.replyTo.imageUrl ? "Photo" : message.replyTo.audioUrl ? "Voice message" : message.replyTo.fileUrl ? "Document" : "")}</span>
+      </div>
+    </div>
+  ) : null;
 
   return (
-    <div className={`message-wrapper ${isOwn ? "message-own" : "message-other"}`}>
+    <div
+      ref={wrapperRef}
+      className={`message-wrapper ${isOwn ? "message-own" : "message-other"} ${swiping ? "swiping" : ""}`}
+      style={wrapperStyle}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
       {!isOwn && <span className="message-sender">{partnerNickname || partnerDisplayName || message.sender}</span>}
 
       <div className={`message-bubble ${isOwn ? "bubble-own" : "bubble-other"}`}>
+        {replyPreview}
+
         {message.text && <p className="message-text">{message.text}</p>}
 
         {message.imageUrl && (
@@ -152,6 +212,22 @@ function MessageBubble({ message, isOwn, partnerDisplayName, partnerNickname, on
             )}
           </span>
         )}
+
+        <div className="message-actions">
+          <button className="message-action-btn reply-action" onClick={handleReplyClick} title="Reply" aria-label="Reply">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+          </button>
+          {isOwn && (
+            <button className="message-action-btn delete-action" onClick={handleDeleteClick} title="Delete" aria-label="Delete">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
