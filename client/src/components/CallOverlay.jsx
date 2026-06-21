@@ -14,6 +14,7 @@ function CallOverlay({
   onReject,
   onEnd,
   onToggleMute,
+  onToggleCamera,
   isMuted,
 }) {
   const localVideoRef = useRef(null);
@@ -242,6 +243,19 @@ function CallOverlay({
                 </svg>
               )}
             </button>
+            {callType === "video" && (
+              <button
+                className="call-control-button"
+                onClick={onToggleCamera}
+                title="Switch camera"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                  <circle cx="12" cy="13" r="4"/>
+                  <path d="M16 13h0"/>
+                </svg>
+              </button>
+            )}
             <button
               className="call-control-button"
               onClick={onEnd}

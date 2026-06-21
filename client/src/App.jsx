@@ -804,6 +804,29 @@ function App() {
     }
   }
 
+  async function toggleCamera() {
+    if (!localStreamRef.current || callTypeRef.current !== "video") return;
+    const oldTrack = localStreamRef.current.getVideoTracks()[0];
+    if (!oldTrack) return;
+    const currentFacing = oldTrack.getSettings?.()?.facingMode;
+    const newFacing = currentFacing === "user" ? "environment" : "user";
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: newFacing, width: { ideal: 640 }, height: { ideal: 480 } },
+      });
+      const newTrack = newStream.getVideoTracks()[0];
+      localStreamRef.current.removeTrack(oldTrack);
+      oldTrack.stop();
+      localStreamRef.current.addTrack(newTrack);
+      const sender = pcRef.current?.getSenders().find((s) => s.track?.kind === "video");
+      if (sender) await sender.replaceTrack(newTrack);
+      setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+    } catch (err) {
+      console.error("Camera switch error:", err);
+    }
+  }
+
   function handleProfilePhotoChange(url) {
     setProfilePhoto(url);
     try {
@@ -1027,6 +1050,7 @@ function App() {
                 onReject={rejectCall}
                 onEnd={endCall}
                 onToggleMute={toggleMute}
+                onToggleCamera={toggleCamera}
                 isMuted={isMuted}
               />
             )}
