@@ -474,11 +474,16 @@ function App() {
     return pcRef.current;
   }
 
-  const remoteStreamForPc = new MediaStream();
+  const pcRemoteStreamRef = { current: null };
+  let remoteStreamVersion = 0;
 
   function createPeerConnection(stream) {
     const config = currentPeerConfig;
     const pc = new RTCPeerConnection(config);
+
+    const freshRemoteStream = new MediaStream();
+    pcRemoteStreamRef.current = freshRemoteStream;
+
     console.debug("[webrtc] create peer connection", {
       callId: callIdRef.current,
       role: callRoleRef.current,
@@ -502,8 +507,6 @@ function App() {
       }
     }
 
-    remoteStreamForPc.getTracks().forEach((t) => { remoteStreamForPc.removeTrack(t); t.stop(); });
-
     pc.ontrack = (event) => {
       console.debug("[webrtc] remote track", {
         kind: event.track?.kind,
@@ -513,22 +516,32 @@ function App() {
       });
       if (event.streams && event.streams[0]) {
         event.streams[0].getTracks().forEach((track) => {
-          if (!remoteStreamForPc.getTracks().some((t) => t.id === track.id)) {
-            remoteStreamForPc.addTrack(track);
+          if (!freshRemoteStream.getTracks().some((t) => t.id === track.id)) {
+            freshRemoteStream.addTrack(track);
           }
         });
-      } else if (event.track && !remoteStreamForPc.getTracks().some((t) => t.id === event.track.id)) {
-        remoteStreamForPc.addTrack(event.track);
+      } else if (event.track && !freshRemoteStream.getTracks().some((t) => t.id === event.track.id)) {
+        freshRemoteStream.addTrack(event.track);
       }
-      remoteStreamRef.current = remoteStreamForPc;
-      setRemoteStream(remoteStreamForPc);
+      remoteStreamRef.current = freshRemoteStream;
+      remoteStreamVersion++;
+      setRemoteStream(new MediaStream(freshRemoteStream.getTracks()));
       startCallRecording();
     };
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
+        const c = event.candidate;
+        console.debug("[webrtc] ICE candidate", {
+          type: c.type || c.candidateType,
+          protocol: c.protocol,
+          address: c.address || c.ip,
+          port: c.port,
+          priority: c.priority,
+          foundation: c.foundation,
+        });
         sendCallSignal("webrtc_ice_candidate", {
-          candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate,
+          candidate: c.toJSON ? c.toJSON() : c,
         });
       }
     };
@@ -544,9 +557,9 @@ function App() {
     };
 
     pc.onconnectionstatechange = () => {
-      console.debug("[webrtc] connection state", pc.connectionState);
+      console.debug("[webrtc] connection state", pc.connectionState, { callId: callIdRef.current });
       if (pc.connectionState === "failed") {
-        restartIce();
+        if (pcRef.current === pc) restartIce();
       }
       if (pc.connectionState === "connected") {
         if (!callStartTimeRef.current) callStartTimeRef.current = Date.now();
@@ -556,25 +569,23 @@ function App() {
         }
       }
       if (pc.connectionState === "disconnected") {
-        handleIceDisconnected();
+        if (pcRef.current === pc) handleIceDisconnected();
       }
     };
 
     pc.oniceconnectionstatechange = () => {
-      console.debug("[webrtc] ICE state", pc.iceConnectionState);
-      if (pc.iceConnectionState === "failed") restartIce();
-      if (pc.iceConnectionState === "disconnected") handleIceDisconnected();
+      console.debug("[webrtc] ICE state", pc.iceConnectionState, { callId: callIdRef.current });
     };
 
     pc.onicegatheringstatechange = () => {
-      console.debug("[webrtc] ICE gathering state", pc.iceGatheringState);
+      console.debug("[webrtc] ICE gathering state", pc.iceGatheringState, { callId: callIdRef.current });
       if (pc.iceGatheringState === "complete") {
-        logSelectedCandidatePair(pc);
+        setTimeout(() => logSelectedCandidatePair(pc), 500);
       }
     };
 
     pc.onsignalingstatechange = () => {
-      console.debug("[webrtc] signaling state", pc.signalingState);
+      console.debug("[webrtc] signaling state", pc.signalingState, { callId: callIdRef.current });
     };
 
     return pc;
@@ -582,6 +593,7 @@ function App() {
 
   function logSelectedCandidatePair(pc) {
     if (!pc || !pc.getReceivers) return;
+    if (pc.connectionState === "closed") return;
     try {
       const receiver = pc.getReceivers().find((r) => r.track?.kind === "audio");
       if (receiver && receiver.transport && receiver.transport.iceTransport) {
@@ -591,7 +603,7 @@ function App() {
           const remote = pair.remote;
           const isRelay = local?.candidateType === "relay" || remote?.candidateType === "relay";
           const isSrflx = local?.candidateType === "srflx" || remote?.candidateType === "srflx";
-          console.debug("[webrtc] selected candidate pair", {
+          console.log("[webrtc] *** SELECTED CANDIDATE PAIR ***", {
             localType: local?.candidateType,
             remoteType: remote?.candidateType,
             localIP: local?.ip || local?.address,
@@ -607,15 +619,30 @@ function App() {
     } catch {}
   }
 
+  let iceDisconnectedCount = 0;
+
   function handleIceDisconnected() {
     if (iceRestartTimerRef.current) clearTimeout(iceRestartTimerRef.current);
+    const pc = pcRef.current;
+    if (!pc || pc.connectionState === "closed") return;
     iceRestartTimerRef.current = setTimeout(async () => {
-      const pc = pcRef.current;
-      if (pc && pc.iceConnectionState === "disconnected") {
-        console.debug("[webrtc] ICE disconnected for 2.5s, attempting restart");
+      const currentPc = pcRef.current;
+      if (!currentPc || currentPc !== pc || currentPc.connectionState === "closed") return;
+      if (currentPc.connectionState === "disconnected" || currentPc.iceConnectionState === "disconnected") {
+        console.debug("[webrtc] disconnected for 2.5s, attempting ICE restart", { callId: callIdRef.current });
+        iceDisconnectedCount++;
         await restartIce();
       }
     }, 2500);
+  }
+
+  async function restartIce() {
+    const pc = pcRef.current;
+    if (!pc || pc.connectionState === "closed" || !callIdRef.current || callStatusRef.current === "idle") return;
+    if (pc.signalingState !== "stable") return;
+    console.debug("[webrtc] restarting ICE", { callId: callIdRef.current });
+    if (typeof pc.restartIce === "function") pc.restartIce();
+    await sendOffer(true);
   }
 
   async function sendOffer(iceRestart = false) {
@@ -623,12 +650,16 @@ function App() {
     if (!pc || makingOfferRef.current || pc.signalingState !== "stable") return;
     try {
       makingOfferRef.current = true;
+      console.debug("[webrtc] creating offer", { callId: callIdRef.current, iceRestart });
       const offer = await pc.createOffer({ iceRestart, offerToReceiveAudio: true, offerToReceiveVideo: callTypeRef.current === "video" });
       await pc.setLocalDescription(offer);
       console.debug("[webrtc] send offer", { callId: callIdRef.current, iceRestart });
       sendCallSignal("webrtc_offer", { description: pc.localDescription, offer: pc.localDescription, iceRestart });
     } catch (err) {
       console.error("[webrtc] offer failed", err);
+      if (iceRestart) {
+        setTimeout(() => restartIce(), 1000);
+      }
     } finally {
       makingOfferRef.current = false;
     }
@@ -781,6 +812,10 @@ function App() {
       remoteStreamRef.current.getTracks().forEach((t) => t.stop());
       remoteStreamRef.current = null;
     }
+    if (pcRemoteStreamRef.current) {
+      pcRemoteStreamRef.current.getTracks().forEach((t) => t.stop());
+      pcRemoteStreamRef.current = null;
+    }
     if (pcRef.current) {
       pcRef.current.close();
       pcRef.current = null;
@@ -793,6 +828,7 @@ function App() {
     makingOfferRef.current = false;
     ignoreOfferRef.current = false;
     settingRemoteAnswerRef.current = false;
+    iceDisconnectedCount = 0;
   }
 
   async function startCall(type) {

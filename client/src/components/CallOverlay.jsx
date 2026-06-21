@@ -26,6 +26,7 @@ function CallOverlay({
   const [elapsed, setElapsed] = useState(0);
   const [isAccepting, setIsAccepting] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(false);
+  const [remoteVideoMuted, setRemoteVideoMuted] = useState(true);
 
   function formatTime(seconds) {
     const m = Math.floor(seconds / 60).toString().padStart(2, "0");
@@ -33,21 +34,24 @@ function CallOverlay({
     return `${m}:${s}`;
   }
 
-  function setMediaElement(ref, stream, reportBlocked = false) {
+  function setMediaElement(ref, stream) {
     const el = ref.current;
     if (!el) return;
     if (!stream) {
       el.srcObject = null;
       return;
     }
-    el.srcObject = stream;
-    if (reportBlocked) {
-      el.play()
-        .then(() => {})
-        .catch(() => {});
-    } else {
-      el.play().catch(() => {});
+    if (el.srcObject !== stream) {
+      el.srcObject = stream;
     }
+    el.play().catch((err) => {
+      console.warn("[call] play() blocked:", err.message);
+      if (ref === remoteVideoRef) {
+        setRemoteVideoMuted(true);
+        el.muted = true;
+        el.play().catch(() => {});
+      }
+    });
   }
 
   useEffect(() => {
@@ -57,14 +61,21 @@ function CallOverlay({
   useEffect(() => {
     const videoTracks = remoteStream ? remoteStream.getVideoTracks() : [];
     const videoStream = videoTracks.length > 0 ? new MediaStream(videoTracks) : null;
+    if (videoStream && remoteVideoRef.current) {
+      remoteVideoRef.current.muted = remoteVideoMuted;
+    }
     setMediaElement(remoteVideoRef, videoStream);
-  }, [remoteStream, status]);
+  }, [remoteStream, status, remoteVideoMuted]);
 
   useEffect(() => {
     const audioTracks = remoteStream ? remoteStream.getAudioTracks() : [];
     const audioStream = audioTracks.length > 0 ? new MediaStream(audioTracks) : null;
-    setMediaElement(remoteAudioRef, audioStream, true);
+    setMediaElement(remoteAudioRef, audioStream);
   }, [remoteStream, status]);
+
+  function toggleRemoteVideoMuted() {
+    setRemoteVideoMuted((prev) => !prev);
+  }
 
   useEffect(() => {
     if (status === "calling" || status === "ringing") {
@@ -250,7 +261,10 @@ function CallOverlay({
         <div className="call-overlay call-active">
           <div className="call-video-stage">
             <div className="call-remote-container">
-              <video ref={remoteVideoRef} className="call-remote-video" autoPlay playsInline />
+              <video ref={remoteVideoRef} className="call-remote-video" autoPlay playsInline muted={remoteVideoMuted} />
+              <button className="call-unmute-video-btn" onClick={toggleRemoteVideoMuted} title={remoteVideoMuted ? "Unmute remote video" : "Mute remote video"}>
+                {remoteVideoMuted ? "🔇" : "🔊"}
+              </button>
             </div>
             {localStream && (
               <div className="call-local-container">
