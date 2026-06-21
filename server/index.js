@@ -169,9 +169,7 @@ app.post("/api/restore", restoreUpload.single("backup"), async (req, res) => {
 });
 
 // ---------- TURN credentials endpoint (returns configured ICE servers to client) ----------
-const TURN_URL = process.env.TURN_URL || "";
-const TURN_USERNAME = process.env.TURN_USERNAME || "";
-const TURN_CREDENTIAL = process.env.TURN_CREDENTIAL || "";
+const METERED_API_KEY = process.env.METERED_API_KEY || "";
 
 // Public Metered open relay as fallback TURN
 const OPENRELAY_TURN = {
@@ -185,7 +183,42 @@ const OPENRELAY_TURN = {
   credential: "openrelayproject",
 };
 
-app.get("/api/turn-credentials", (req, res) => {
+let cachedMeteredCredentials = null;
+let meteredCacheExpiry = 0;
+
+async function fetchMeteredCredentials() {
+  if (!METERED_API_KEY) return null;
+  if (cachedMeteredCredentials && Date.now() < meteredCacheExpiry) return cachedMeteredCredentials;
+  try {
+    const https = require("https");
+    const url = `https://heartchatibrahim.metered.live/api/v1/turn/credentials?apiKey=${METERED_API_KEY}`;
+    const response = await new Promise((resolve, reject) => {
+      https.get(url, (res) => {
+        let data = "";
+        res.on("data", (chunk) => data += chunk);
+        res.on("end", () => {
+          try { resolve(JSON.parse(data)); } catch { reject(new Error("Invalid JSON")); }
+        });
+      }).on("error", reject);
+    });
+    if (Array.isArray(response)) {
+      cachedMeteredCredentials = response;
+      meteredCacheExpiry = Date.now() + 60000;
+      return response;
+    }
+    if (response && response.iceServers) {
+      cachedMeteredCredentials = response.iceServers;
+      meteredCacheExpiry = Date.now() + 60000;
+      return response.iceServers;
+    }
+    return null;
+  } catch (err) {
+    console.error("[turn] Metered API error:", err.message);
+    return null;
+  }
+}
+
+app.get("/api/turn-credentials", async (req, res) => {
   const iceServers = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
@@ -197,16 +230,15 @@ app.get("/api/turn-credentials", (req, res) => {
   // Open relay first (always works, proven)
   iceServers.push(OPENRELAY_TURN);
 
-  // Your private TURN server (activate on Metered dashboard for this to work)
-  if (TURN_URL && TURN_USERNAME && TURN_CREDENTIAL) {
-    iceServers.push({
-      urls: TURN_URL.split(",").map((url) => url.trim()).filter(Boolean),
-      username: TURN_USERNAME,
-      credential: TURN_CREDENTIAL,
-    });
+  // Fetch time-limited TURN credentials from Metered REST API
+  const meteredCredentials = await fetchMeteredCredentials();
+  if (meteredCredentials) {
+    for (const cred of meteredCredentials) {
+      iceServers.push(cred);
+    }
   }
 
-  res.json({ iceServers, ttl: 86400 });
+  res.json({ iceServers, ttl: 600 });
 });
 
 // ---------- Clear Call Logs (one-time, triggers clients to clear localStorage) ----------
