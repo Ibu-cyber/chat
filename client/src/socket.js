@@ -35,7 +35,7 @@ export function connectToServer(username, password) {
     reconnectionDelay: 500,
     reconnectionDelayMax: 5000,
     timeout: 20000,
-    transports: ["websocket", "polling"],
+    transports: ["polling", "websocket"],
   });
 
   // Return the socket for use by the calling code
