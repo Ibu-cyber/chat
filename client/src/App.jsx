@@ -11,50 +11,42 @@ import MediaGallery from "./components/MediaGallery";
 import BottomNav from "./components/BottomNav";
 import "./styles/App.css";
 
-const DEFAULT_ICE_SERVERS = [
+const STUN_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
   { urls: "stun:stun2.l.google.com:19302" },
   { urls: "stun:stun3.l.google.com:19302" },
   { urls: "stun:stun4.l.google.com:19302" },
-  { urls: "stun:openrelay.metered.ca:80" },
-  {
-    urls: [
-      "turn:openrelay.metered.ca:80",
-      "turn:openrelay.metered.ca:443",
-      "turn:openrelay.metered.ca:443?transport=tcp",
-      "turns:openrelay.metered.ca:443?transport=tcp",
-    ],
-    username: "openrelayproject",
-    credential: "openrelayproject",
-  },
   { urls: "stun:stun.cloudflare.com:3478" },
 ];
 
-function getIceServers() {
-  const turnUrl = import.meta.env.VITE_TURN_URL;
-  const turnUsername = import.meta.env.VITE_TURN_USERNAME;
-  const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
+let cachedIceServers = null;
 
-  if (turnUrl && turnUsername && turnCredential) {
-    return [
-      { urls: "stun:stun.l.google.com:19302" },
-      {
-        urls: turnUrl.split(",").map((url) => url.trim()).filter(Boolean),
-        username: turnUsername,
-        credential: turnCredential,
-      },
-    ];
-  }
-
-  return DEFAULT_ICE_SERVERS;
+async function fetchIceServers() {
+  if (cachedIceServers) return cachedIceServers;
+  try {
+    const res = await fetch("/api/turn-credentials");
+    if (res.ok) {
+      const data = await res.json();
+      cachedIceServers = data.iceServers;
+      setTimeout(() => { cachedIceServers = null; }, (data.ttl || 86400) * 1000);
+      return cachedIceServers;
+    }
+  } catch {}
+  return STUN_SERVERS;
 }
 
-const PC_CONFIG = {
-  iceServers: getIceServers(),
-  iceTransportPolicy: "all",
-  iceCandidatePoolSize: 10,
-};
+function buildPeerConfig(iceServers, useRelayOnly = false) {
+  return {
+    iceServers: iceServers || STUN_SERVERS,
+    iceTransportPolicy: useRelayOnly ? "relay" : "all",
+    iceCandidatePoolSize: 10,
+    bundlePolicy: "max-bundle",
+    rtcpMuxPolicy: "require",
+  };
+}
+
+let currentPeerConfig = buildPeerConfig(STUN_SERVERS);
 
 function formatLastSeen(isoString) {
   if (!isoString) return "";
@@ -482,24 +474,58 @@ function App() {
     return pcRef.current;
   }
 
+  let iceRelayAttempts = 0;
+  const remoteStreamForPc = new MediaStream();
+
   function createPeerConnection(stream) {
-    const pc = new RTCPeerConnection(PC_CONFIG);
-    console.debug("[webrtc] create peer connection", { callId: callIdRef.current, role: callRoleRef.current, config: PC_CONFIG });
+    iceRelayAttempts = 0;
+    const config = useRelayOnly
+      ? buildPeerConfig(currentPeerConfig.iceServers, true)
+      : currentPeerConfig;
+    const pc = new RTCPeerConnection(config);
+    console.debug("[webrtc] create peer connection", {
+      callId: callIdRef.current,
+      role: callRoleRef.current,
+      iceTransportPolicy: config.iceTransportPolicy,
+      turnConfigured: config.iceServers.some((s) => String(s.urls || "").includes("turn:") || (Array.isArray(s.urls) && s.urls.some((u) => u.includes("turn:")))),
+    });
 
     stream.getTracks().forEach((track) => {
       track.enabled = true;
       pc.addTrack(track, stream);
     });
 
-    const receivedStream = new MediaStream();
-    pc.ontrack = (event) => {
-      console.debug("[webrtc] remote track", { kind: event.track?.kind, id: event.track?.id, streams: event.streams?.length });
-      if (event.track && !receivedStream.getTracks().some((track) => track.id === event.track.id)) {
-        receivedStream.addTrack(event.track);
+    if (callTypeRef.current === "video") {
+      const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+      if (sender) {
+        const params = sender.getParameters();
+        if (!params.encodings) params.encodings = [{}];
+        params.encodings[0].maxBitrate = 500000;
+        params.encodings[0].maxFramerate = 24;
+        sender.setParameters(params).catch(() => {});
       }
-      const remote = new MediaStream(receivedStream.getTracks());
-      remoteStreamRef.current = remote;
-      setRemoteStream(remote);
+    }
+
+    remoteStreamForPc.getTracks().forEach((t) => { remoteStreamForPc.removeTrack(t); t.stop(); });
+
+    pc.ontrack = (event) => {
+      console.debug("[webrtc] remote track", {
+        kind: event.track?.kind,
+        id: event.track?.id,
+        streams: event.streams?.length,
+        trackReadyState: event.track?.readyState,
+      });
+      if (event.streams && event.streams[0]) {
+        event.streams[0].getTracks().forEach((track) => {
+          if (!remoteStreamForPc.getTracks().some((t) => t.id === track.id)) {
+            remoteStreamForPc.addTrack(track);
+          }
+        });
+      } else if (event.track && !remoteStreamForPc.getTracks().some((t) => t.id === event.track.id)) {
+        remoteStreamForPc.addTrack(event.track);
+      }
+      remoteStreamRef.current = remoteStreamForPc;
+      setRemoteStream(remoteStreamForPc);
       startCallRecording();
     };
 
@@ -511,9 +537,21 @@ function App() {
       }
     };
 
+    pc.onicecandidateerror = (event) => {
+      console.warn("[webrtc] ICE candidate error", {
+        address: event.address,
+        port: event.port,
+        url: event.url,
+        errorCode: event.errorCode,
+        errorText: event.errorText,
+      });
+    };
+
     pc.onconnectionstatechange = () => {
       console.debug("[webrtc] connection state", pc.connectionState);
-      if (pc.connectionState === "failed") restartIce();
+      if (pc.connectionState === "failed") {
+        restartIce();
+      }
       if (pc.connectionState === "connected") {
         if (!callStartTimeRef.current) callStartTimeRef.current = Date.now();
         if (callStatusRef.current !== "connected") {
@@ -521,20 +559,67 @@ function App() {
           callStatusRef.current = "connected";
         }
       }
+      if (pc.connectionState === "disconnected") {
+        handleIceDisconnected();
+      }
     };
 
     pc.oniceconnectionstatechange = () => {
       console.debug("[webrtc] ICE state", pc.iceConnectionState);
       if (pc.iceConnectionState === "failed") restartIce();
-      if (pc.iceConnectionState === "disconnected") {
-        if (iceRestartTimerRef.current) clearTimeout(iceRestartTimerRef.current);
-        iceRestartTimerRef.current = setTimeout(() => restartIce(), 2500);
+      if (pc.iceConnectionState === "disconnected") handleIceDisconnected();
+    };
+
+    pc.onicegatheringstatechange = () => {
+      console.debug("[webrtc] ICE gathering state", pc.iceGatheringState);
+      if (pc.iceGatheringState === "complete") {
+        logSelectedCandidatePair(pc);
       }
     };
 
-    pc.onicegatheringstatechange = () => console.debug("[webrtc] ICE gathering", pc.iceGatheringState);
-    pc.onsignalingstatechange = () => console.debug("[webrtc] signaling state", pc.signalingState);
+    pc.onsignalingstatechange = () => {
+      console.debug("[webrtc] signaling state", pc.signalingState);
+    };
+
     return pc;
+  }
+
+  function logSelectedCandidatePair(pc) {
+    if (!pc || !pc.getReceivers) return;
+    try {
+      const receiver = pc.getReceivers().find((r) => r.track?.kind === "audio");
+      if (receiver && receiver.transport && receiver.transport.iceTransport) {
+        const pair = receiver.transport.iceTransport.getSelectedCandidatePair();
+        if (pair) {
+          const local = pair.local;
+          const remote = pair.remote;
+          const isRelay = local?.candidateType === "relay" || remote?.candidateType === "relay";
+          const isSrflx = local?.candidateType === "srflx" || remote?.candidateType === "srflx";
+          console.debug("[webrtc] selected candidate pair", {
+            localType: local?.candidateType,
+            remoteType: remote?.candidateType,
+            localIP: local?.ip || local?.address,
+            remoteIP: remote?.ip || remote?.address,
+            localPort: local?.port,
+            remotePort: remote?.port,
+            protocol: local?.protocol,
+            relayUsed: isRelay,
+            natTraversal: isSrflx ? "srflx" : isRelay ? "relay" : "host",
+          });
+        }
+      }
+    } catch {}
+  }
+
+  function handleIceDisconnected() {
+    if (iceRestartTimerRef.current) clearTimeout(iceRestartTimerRef.current);
+    iceRestartTimerRef.current = setTimeout(async () => {
+      const pc = pcRef.current;
+      if (pc && pc.iceConnectionState === "disconnected") {
+        console.debug("[webrtc] ICE disconnected for 2.5s, attempting restart");
+        await restartIce();
+      }
+    }, 2500);
   }
 
   async function sendOffer(iceRestart = false) {

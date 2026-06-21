@@ -165,6 +165,31 @@ app.post("/api/restore", restoreUpload.single("backup"), async (req, res) => {
   }
 });
 
+// ---------- TURN credentials endpoint (returns configured ICE servers to client) ----------
+const TURN_URL = process.env.TURN_URL || "";
+const TURN_USERNAME = process.env.TURN_USERNAME || "";
+const TURN_CREDENTIAL = process.env.TURN_CREDENTIAL || "";
+
+app.get("/api/turn-credentials", (req, res) => {
+  const iceServers = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
+    { urls: "stun:stun3.l.google.com:19302" },
+    { urls: "stun:stun4.l.google.com:19302" },
+  ];
+
+  if (TURN_URL && TURN_USERNAME && TURN_CREDENTIAL) {
+    iceServers.push({
+      urls: TURN_URL.split(",").map((url) => url.trim()).filter(Boolean),
+      username: TURN_USERNAME,
+      credential: TURN_CREDENTIAL,
+    });
+  }
+
+  res.json({ iceServers, ttl: 86400 });
+});
+
 // ---------- Clear Call Logs (one-time, triggers clients to clear localStorage) ----------
 app.post("/api/clear-logs", (req, res) => {
   io.emit("clear_call_logs");
