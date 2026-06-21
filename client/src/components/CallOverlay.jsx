@@ -196,8 +196,6 @@ function CallOverlay({
               type="button"
               className="call-accept-button"
               onClick={handleAcceptClick}
-              onTouchEnd={handleAcceptClick}
-              onPointerUp={handleAcceptClick}
               disabled={isAccepting}
             >
               {isAccepting ? "Opening..." : `${callType === "video" ? "📷" : "📞"} Accept`}

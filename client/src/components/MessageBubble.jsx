@@ -1,13 +1,8 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 
 function MessageBubble({ message, isOwn, partnerDisplayName, partnerNickname, onImageClick, onReply, onDelete }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioRef, setAudioRef] = useState(null);
-  const [swiping, setSwiping] = useState(false);
-  const [swipeOffset, setSwipeOffset] = useState(0);
-  const touchStartX = useRef(0);
-  const touchStartY = useRef(0);
-  const animFrame = useRef(null);
 
   function formatTime(dateString) {
     const date = new Date(dateString);
@@ -67,32 +62,6 @@ function MessageBubble({ message, isOwn, partnerDisplayName, partnerNickname, on
     return "📄";
   }
 
-  function handleTouchStart(e) {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
-    setSwipeOffset(0);
-    setSwiping(false);
-  }
-
-  function handleTouchMove(e) {
-    const dx = e.touches[0].clientX - touchStartX.current;
-    const dy = Math.abs(e.touches[0].clientY - touchStartY.current);
-    if (dy > 20) { setSwipeOffset(0); return; }
-    if (dx > 10) {
-      setSwiping(true);
-      const offset = Math.min(dx, 100);
-      setSwipeOffset(offset);
-    }
-  }
-
-  function handleTouchEnd() {
-    if (swipeOffset > 50) {
-      if (onReply) onReply(message);
-    }
-    setSwipeOffset(0);
-    setSwiping(false);
-  }
-
   function handleReplyClick(e) {
     e.stopPropagation();
     if (onReply) onReply(message);
@@ -102,8 +71,6 @@ function MessageBubble({ message, isOwn, partnerDisplayName, partnerNickname, on
     e.stopPropagation();
     if (onDelete) onDelete(message._id);
   }
-
-  const wrapperStyle = swiping ? { transform: `translateX(${swipeOffset}px)`, transition: "none", touchAction: "none" } : { transform: "translateX(0)", transition: "transform 0.3s ease" };
 
   const replyPreview = message.replyTo ? (
     <div className="reply-preview">
@@ -116,14 +83,7 @@ function MessageBubble({ message, isOwn, partnerDisplayName, partnerNickname, on
   ) : null;
 
   return (
-    <div
-      ref={wrapperRef}
-      className={`message-wrapper ${isOwn ? "message-own" : "message-other"} ${swiping ? "swiping" : ""}`}
-      style={wrapperStyle}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-    >
+    <div className={`message-wrapper ${isOwn ? "message-own" : "message-other"}`}>
       {!isOwn && <span className="message-sender">{partnerNickname || partnerDisplayName || message.sender}</span>}
 
       <div className={`message-bubble ${isOwn ? "bubble-own" : "bubble-other"}`}>
@@ -213,21 +173,25 @@ function MessageBubble({ message, isOwn, partnerDisplayName, partnerNickname, on
           </span>
         )}
 
-        <div className="message-actions">
-          <button className="message-action-btn reply-action" onClick={handleReplyClick} title="Reply" aria-label="Reply">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            </svg>
-          </button>
-          {isOwn && (
-            <button className="message-action-btn delete-action" onClick={handleDeleteClick} title="Delete" aria-label="Delete">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6"/>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-              </svg>
-            </button>
-          )}
-        </div>
+        {onReply || onDelete ? (
+          <div className="message-actions">
+            {onReply && (
+              <button className="message-action-btn reply-action" onClick={handleReplyClick} title="Reply" aria-label="Reply">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+              </button>
+            )}
+            {isOwn && onDelete && (
+              <button className="message-action-btn delete-action" onClick={handleDeleteClick} title="Delete" aria-label="Delete">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6"/>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                </svg>
+              </button>
+            )}
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -240,6 +240,7 @@ function App() {
       callRoleRef.current = "callee";
       setCallType(data.type);
       callTypeRef.current = data.type;
+      setPartnerName(data.caller);
       setCallStatus("ringing");
       callStatusRef.current = "ringing";
     });
@@ -373,6 +374,10 @@ function App() {
       );
     });
 
+    socket.on("message_deleted", (data) => {
+      setMessages((prev) => prev.filter((m) => m._id !== data.messageId));
+    });
+
     // Request message history AFTER listener is registered
     // (avoids race condition where server sends messages before client is listening)
     socket.emit("request_messages");
@@ -381,6 +386,7 @@ function App() {
       socket.off("load_messages");
       socket.off("new_message");
       socket.off("message_status_update");
+      socket.off("message_deleted");
     };
   }, [currentUser]);
 
@@ -732,7 +738,7 @@ function App() {
       localStreamRef.current = stream;
       setLocalStream(stream);
 
-      createPeerConnection(stream);
+      pcRef.current = createPeerConnection(stream);
 
       setCallStatus("calling");
       callStatusRef.current = "calling";
@@ -755,7 +761,7 @@ function App() {
       localStreamRef.current = stream;
       setLocalStream(stream);
 
-      createPeerConnection(stream);
+      pcRef.current = createPeerConnection(stream);
 
       getSocket().emit("call_accepted", { callId: callIdRef.current, callee: currentUser });
       callStartTimeRef.current = Date.now();

@@ -11,6 +11,7 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
   const [viewingImage, setViewingImage] = useState(null);
   const [showRecorder, setShowRecorder] = useState(false);
   const [celebrationMessage, setCelebrationMessage] = useState(null);
+  const [replyTo, setReplyTo] = useState(null);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -78,9 +79,14 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
   function handleSendMessage(text) {
     const socket = getSocket();
     if (socket && text.trim()) {
-      socket.emit("send_message", { text: text.trim() });
+      const msgData = { text: text.trim() };
+      if (replyTo) {
+        msgData.replyTo = { _id: replyTo._id, text: replyTo.text, sender: replyTo.sender, imageUrl: replyTo.imageUrl, audioUrl: replyTo.audioUrl, fileUrl: replyTo.fileUrl };
+        setReplyTo(null);
+      }
+      socket.emit("send_message", msgData);
     }
-  }
+    }
 
   function handleSendFile(fileUrl, fileType, fileName) {
     const socket = getSocket();
@@ -95,6 +101,10 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
       messageData.fileName = fileName || "Document";
     }
     messageData.text = "";
+    if (replyTo) {
+      messageData.replyTo = { _id: replyTo._id, text: replyTo.text, sender: replyTo.sender, imageUrl: replyTo.imageUrl, audioUrl: replyTo.audioUrl, fileUrl: replyTo.fileUrl };
+      setReplyTo(null);
+    }
     socket.emit("send_message", messageData);
   }
 
@@ -106,6 +116,15 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
   function handleStopTyping() {
     const socket = getSocket();
     if (socket) socket.emit("stop_typing");
+  }
+
+  function handleReply(message) {
+    setReplyTo(message);
+  }
+
+  function handleDelete(messageId) {
+    const socket = getSocket();
+    if (socket) socket.emit("delete_message", { messageId });
   }
 
   return (
@@ -180,6 +199,8 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
               partnerDisplayName={partnerDisplayName}
               partnerNickname={partnerNickname}
               onImageClick={(url) => setViewingImage(url)}
+              onReply={handleReply}
+              onDelete={handleDelete}
             />
           ))
         )}
@@ -197,9 +218,24 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
       </div>
 
       <div className="input-area">
+        {replyTo && (
+          <div className="reply-bar">
+            <div className="reply-bar-line" />
+            <div className="reply-bar-content">
+              <span className="reply-bar-sender">{replyTo.sender === username ? "You" : (partnerNickname || partnerDisplayName || replyTo.sender)}</span>
+              <span className="reply-bar-text">{replyTo.text || (replyTo.imageUrl ? "Photo" : replyTo.audioUrl ? "Voice message" : replyTo.fileUrl ? "Document" : "")}</span>
+            </div>
+            <button className="reply-bar-close" onClick={() => setReplyTo(null)} aria-label="Cancel reply">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+        )}
         {showRecorder ? (
           <AudioRecorder
             onSend={(audioUrl) => {
+              if (replyTo) setReplyTo(null);
               handleSendFile(audioUrl, "audio");
               setShowRecorder(false);
             }}
