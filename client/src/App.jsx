@@ -379,16 +379,24 @@ function App() {
       setMessages((prev) => prev.filter((m) => m._id !== data.messageId));
     });
 
-    console.log("[DEBUG] setup message listeners, socket.connected:", socket.connected);
-    // Request message history AFTER listener is registered
-    // (avoids race condition where server sends messages before client is listening)
-    socket.emit("request_messages");
+    function requestMessages() {
+      socket.emit("request_messages");
+    }
+
+    // Re-request messages whenever socket (re)connects
+    socket.on("connect", requestMessages);
+
+    // If already connected, request immediately
+    if (socket.connected) {
+      requestMessages();
+    }
 
     return () => {
       socket.off("load_messages");
       socket.off("new_message");
       socket.off("message_status_update");
       socket.off("message_deleted");
+      socket.off("connect", requestMessages);
     };
   }, [currentUser]);
 
