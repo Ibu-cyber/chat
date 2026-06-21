@@ -127,6 +127,8 @@ function ChatPage({ username, displayName, partnerName, partnerDisplayName, part
     if (socket) socket.emit("delete_message", { messageId });
   }
 
+  console.log("[DEBUG] ChatPage render", { messagesCount: messages.length, partnerName });
+
   return (
     <div className="chat-panel">
       <div className="chat-panel-header">

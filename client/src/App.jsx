@@ -359,6 +359,7 @@ function App() {
     if (!socket) return;
 
     socket.on("load_messages", (loadedMessages) => {
+      console.log("[DEBUG] load_messages received", { count: loadedMessages.length, currentUser });
       setMessages(loadedMessages);
     });
 
@@ -378,6 +379,7 @@ function App() {
       setMessages((prev) => prev.filter((m) => m._id !== data.messageId));
     });
 
+    console.log("[DEBUG] setup message listeners, socket.connected:", socket.connected);
     // Request message history AFTER listener is registered
     // (avoids race condition where server sends messages before client is listening)
     socket.emit("request_messages");
