@@ -888,10 +888,6 @@ function App() {
     setShowMobileChat(false);
   }
 
-  function handleMessagesRestored() {
-    window.location.reload();
-  }
-
   function handleMobileSelectContact(contact) {
     setSelectedContact(contact);
     setShowMobileChat(true);
@@ -938,7 +934,6 @@ function App() {
             onOpenProfile={() => setShowProfile(true)}
             onPartnerNicknameChange={handlePartnerNicknameChange}
             onOpenChat={handleOpenChat}
-            onMessagesRestored={handleMessagesRestored}
           />
         {activeTab === "chat" ? (
           <ChatPage
@@ -1008,7 +1003,6 @@ function App() {
           onOpenProfile={() => setShowProfile(true)}
           onPartnerNicknameChange={handlePartnerNicknameChange}
           onOpenChat={handleOpenChat}
-          onMessagesRestored={handleMessagesRestored}
         />
       );
     }

@@ -109,14 +109,6 @@ function ProfileModal({ username, profilePhoto, onProfilePhotoChange, chatBackgr
           </div>
         </div>
 
-        <div className="modal-section">
-          <h3 className="modal-section-title">Backup</h3>
-          <p className="modal-section-desc">Download all messages, photos, and files as a ZIP archive.</p>
-          <button className="modal-upload-btn" onClick={() => window.location.href = "/api/backup"}>
-            Download Backup
-          </button>
-        </div>
-
         <button className="modal-done-btn" onClick={onClose}>Done</button>
       </div>
     </div>

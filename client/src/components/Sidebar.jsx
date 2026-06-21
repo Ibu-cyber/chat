@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect } from "react";
+
 import ThemeToggle from "./ThemeToggle";
 
-function Sidebar({ username, displayName, partnerName, partnerDisplayName, partnerNickname, partnerStatus, partnerOnline, selectedContact, onSelectContact, onLogout, profilePhoto, partnerPhoto, onOpenProfile, onPartnerNicknameChange, onOpenChat, onMessagesRestored }) {
-  const [restoring, setRestoring] = useState(false);
-  const restoreInputRef = useRef(null);
+function Sidebar({ username, displayName, partnerName, partnerDisplayName, partnerNickname, partnerStatus, partnerOnline, selectedContact, onSelectContact, onLogout, profilePhoto, partnerPhoto, onOpenProfile, onPartnerNicknameChange, onOpenChat }) {
   const [editingNickname, setEditingNickname] = useState(false);
   const [nicknameInput, setNicknameInput] = useState(partnerNickname || "");
   const inputRef = useRef(null);
@@ -25,29 +24,6 @@ function Sidebar({ username, displayName, partnerName, partnerDisplayName, partn
     if (e.key === "Escape") {
       setNicknameInput(partnerNickname || "");
       setEditingNickname(false);
-    }
-  }
-
-  async function handleLoadBackup(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    setRestoring(true);
-    try {
-      const formData = new FormData();
-      formData.append("backup", file);
-      const res = await fetch("/api/restore", { method: "POST", body: formData });
-      const data = await res.json();
-      if (res.ok) {
-        alert(`Restored ${data.count} messages from backup. Reloading...`);
-        if (onMessagesRestored) onMessagesRestored();
-      } else {
-        alert("Restore failed: " + (data.error || "Unknown error"));
-      }
-    } catch {
-      alert("Restore failed. Is the server running?");
-    } finally {
-      setRestoring(false);
-      e.target.value = "";
     }
   }
 
@@ -107,23 +83,6 @@ function Sidebar({ username, displayName, partnerName, partnerDisplayName, partn
       </div>
 
       <div className="sidebar-footer">
-        <button className="sidebar-backup-btn" onClick={() => window.location.href = "/api/backup"}>
-          Download Backup
-        </button>
-        <button
-          className="sidebar-backup-btn"
-          onClick={() => restoreInputRef.current?.click()}
-          disabled={restoring}
-        >
-          {restoring ? "Restoring..." : "Load Backup"}
-        </button>
-        <input
-          ref={restoreInputRef}
-          type="file"
-          accept=".zip"
-          hidden
-          onChange={handleLoadBackup}
-        />
         <div className="sidebar-footer-row">
           <ThemeToggle />
           <button className="sidebar-logout" onClick={onLogout}>
