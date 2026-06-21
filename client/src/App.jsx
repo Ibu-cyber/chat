@@ -47,7 +47,7 @@ function getIceServers() {
 
 const PC_CONFIG = {
   iceServers: getIceServers(),
-  iceTransportPolicy: "relay",
+  iceTransportPolicy: "all",
   iceCandidatePoolSize: 10,
 };
 
@@ -114,8 +114,6 @@ function App() {
   const [remoteStream, setRemoteStream] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [missedCallCount, setMissedCallCount] = useState(0);
-  const [zegoRoomId, setZegoRoomId] = useState(null);
-  const [zegoRoomActive, setZegoRoomActive] = useState(false);
 
   const callStatusRef = useRef("idle");
   const callTypeRef = useRef(null);
@@ -238,8 +236,6 @@ function App() {
         return;
       }
       callIdRef.current = data.callId;
-      setZegoRoomId(data.callId);
-      setZegoRoomActive(false);
       callRoleRef.current = "callee";
       setCallType(data.type);
       callTypeRef.current = data.type;
@@ -251,11 +247,10 @@ function App() {
       console.debug("[call] accepted", data);
       if (callStatusRef.current !== "calling") return;
       callIdRef.current = data.callId || callIdRef.current;
-      setZegoRoomId(callIdRef.current);
-      setZegoRoomActive(true);
       callStartTimeRef.current = Date.now();
       setCallStatus("connected");
       callStatusRef.current = "connected";
+      await sendOffer(false);
     });
 
     socket.on("call_rejected", (data) => {
@@ -718,8 +713,6 @@ function App() {
     pendingCandidatesRef.current = [];
     seenCandidatesRef.current = new Set();
     callIdRef.current = null;
-    setZegoRoomId(null);
-    setZegoRoomActive(false);
     callRoleRef.current = null;
     makingOfferRef.current = false;
     ignoreOfferRef.current = false;
@@ -731,11 +724,16 @@ function App() {
     try {
       const callId = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
       callIdRef.current = callId;
-      setZegoRoomId(callId);
-      setZegoRoomActive(true);
       callRoleRef.current = "caller";
       callTypeRef.current = type;
       setCallType(type);
+
+      const stream = await getMedia(type === "video");
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+
+      createPeerConnection(stream);
+
       setCallStatus("calling");
       callStatusRef.current = "calling";
       getSocket().emit("call_user", { callId, caller: currentUser, type });
@@ -750,10 +748,15 @@ function App() {
     if (callStatusRef.current !== "ringing") return;
     try {
       callRoleRef.current = "callee";
+
+      const stream = await getMedia(callTypeRef.current === "video");
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+
+      createPeerConnection(stream);
+
       getSocket().emit("call_accepted", { callId: callIdRef.current, callee: currentUser });
       callStartTimeRef.current = Date.now();
-      setZegoRoomId(callIdRef.current);
-      setZegoRoomActive(true);
       setCallStatus("connected");
       callStatusRef.current = "connected";
     } catch (err) {
@@ -1017,8 +1020,6 @@ function App() {
                 partnerNickname={partnerNickname}
                 localStream={localStream}
                 remoteStream={remoteStream}
-                zegoRoomId={zegoRoomId}
-                zegoRoomActive={zegoRoomActive}
                 displayName={displayName}
                 onAccept={acceptCall}
                 onReject={rejectCall}
