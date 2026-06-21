@@ -98,6 +98,9 @@ if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "..", "client", "dist")));
 }
 
+// Health check endpoint for Railway
+app.get("/healthz", (req, res) => res.send("ok"));
+
 // ---------- Upload Route ----------
 // When the client uploads a photo or audio, it goes here
 app.use("/api/upload", uploadRouter);
