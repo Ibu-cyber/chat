@@ -957,6 +957,9 @@ function App() {
 
   function handleLoginSuccess(username) {
     setCurrentUser(username);
+    fetchIceServers().then((servers) => {
+      currentPeerConfig = buildPeerConfig(servers);
+    });
     function doRequest() {
       const socket = getSocket();
       if (socket && socket.connected) {
