@@ -131,6 +131,7 @@ function App() {
   const callStartTimeRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recordingChunksRef = useRef([]);
+  const callAudioContextRef = useRef(null);
 
   // Auto-reconnect from saved session on mount
   useEffect(() => {
@@ -546,7 +547,6 @@ function App() {
       makingOfferRef.current = true;
       const offer = await pc.createOffer({ iceRestart, offerToReceiveAudio: true, offerToReceiveVideo: callTypeRef.current === "video" });
       await pc.setLocalDescription(offer);
-      await waitForIceGathering(pc);
       console.debug("[webrtc] send offer", { callId: callIdRef.current, iceRestart });
       sendCallSignal("webrtc_offer", { description: pc.localDescription, offer: pc.localDescription, iceRestart });
     } catch (err) {
@@ -575,7 +575,6 @@ function App() {
       await pc.setRemoteDescription(description);
       await flushPendingCandidates();
       await pc.setLocalDescription(await pc.createAnswer());
-      await waitForIceGathering(pc);
       sendCallSignal("webrtc_answer", { description: pc.localDescription, answer: pc.localDescription });
       if (callStatusRef.current !== "connected") {
         setCallStatus("connected");
@@ -644,22 +643,6 @@ function App() {
     await sendOffer(true);
   }
 
-  function waitForIceGathering(pc) {
-    if (pc.iceGatheringState === "complete") return Promise.resolve();
-    return new Promise((resolve) => {
-      const timeout = setTimeout(done, 2000);
-      function done() {
-        clearTimeout(timeout);
-        pc.removeEventListener("icegatheringstatechange", handleStateChange);
-        resolve();
-      }
-      function handleStateChange() {
-        if (pc.iceGatheringState === "complete") done();
-      }
-      pc.addEventListener("icegatheringstatechange", handleStateChange);
-    });
-  }
-
   async function getMedia(video) {
     const audio = {
         echoCancellation: true,
@@ -690,10 +673,25 @@ function App() {
     throw lastError;
   }
 
+  function unlockAudioPlayback() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === "suspended") ctx.resume();
+      if (callAudioContextRef.current) {
+        try { callAudioContextRef.current.close(); } catch {}
+      }
+      callAudioContextRef.current = ctx;
+    } catch {}
+  }
+
   function cleanupCall() {
     if (iceRestartTimerRef.current) {
       clearTimeout(iceRestartTimerRef.current);
       iceRestartTimerRef.current = null;
+    }
+    if (callAudioContextRef.current) {
+      try { callAudioContextRef.current.close(); } catch {}
+      callAudioContextRef.current = null;
     }
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((t) => t.stop());
@@ -728,6 +726,8 @@ function App() {
       callTypeRef.current = type;
       setCallType(type);
 
+      unlockAudioPlayback();
+
       const stream = await getMedia(type === "video");
       localStreamRef.current = stream;
       setLocalStream(stream);
@@ -748,6 +748,8 @@ function App() {
     if (callStatusRef.current !== "ringing") return;
     try {
       callRoleRef.current = "callee";
+
+      unlockAudioPlayback();
 
       const stream = await getMedia(callTypeRef.current === "video");
       localStreamRef.current = stream;
