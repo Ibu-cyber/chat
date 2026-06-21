@@ -42,10 +42,6 @@ function LoginScreen({ onLoginSuccess }) {
     // If the server accepts our credentials...
     socket.on("connect", () => {
       setIsLoading(false);
-      // Save session so refresh doesn't log us out
-      try {
-        localStorage.setItem("heartchat_session", JSON.stringify({ username, password }));
-      } catch {}
       onLoginSuccess(username); // Tell App.jsx we're logged in!
     });
 

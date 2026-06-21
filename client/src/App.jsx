@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { getSocket, connectToServer } from "./socket";
+import { getSocket } from "./socket";
 import { ThemeProvider } from "./context/ThemeContext";
 import LoginScreen from "./components/LoginScreen";
 import Sidebar from "./components/Sidebar";
@@ -79,18 +79,8 @@ function formatLastSeen(isoString) {
   return `last seen on ${month}/${day} at ${time}`;
 }
 
-function getSavedSession() {
-  try {
-    return JSON.parse(localStorage.getItem("heartchat_session") || "null");
-  } catch {
-    return null;
-  }
-}
-
 function App() {
-  const savedSession = getSavedSession();
-  const [currentUser, setCurrentUser] = useState(savedSession?.username || null);
-  const [isReconnecting, setIsReconnecting] = useState(!!savedSession);
+  const [currentUser, setCurrentUser] = useState(null);
   const [partnerName, setPartnerName] = useState(null);
   const [selectedContact, setSelectedContact] = useState(null);
   const [activeTab, setActiveTab] = useState("chat");
@@ -133,20 +123,6 @@ function App() {
   const mediaRecorderRef = useRef(null);
   const recordingChunksRef = useRef([]);
   const callAudioContextRef = useRef(null);
-
-  // Auto-reconnect from saved session on mount
-  useEffect(() => {
-    if (!savedSession || !savedSession.username || !savedSession.password) return;
-    const socket = connectToServer(savedSession.username, savedSession.password);
-    socket.on("connect", () => {
-      setIsReconnecting(false);
-    });
-    socket.on("connect_error", () => {
-      localStorage.removeItem("heartchat_session");
-      setCurrentUser(null);
-      setIsReconnecting(false);
-    });
-  }, []);
 
   useEffect(() => {
     function handleResize() {
@@ -910,7 +886,6 @@ function App() {
     setSelectedContact(null);
     setActiveTab("chat");
     setShowMobileChat(false);
-    localStorage.removeItem("heartchat_session");
   }
 
   function handleMessagesRestored() {
@@ -1049,15 +1024,7 @@ function App() {
   return (
     <ThemeProvider>
       <div className="app-container">
-        {isReconnecting ? (
-          <div className="login-screen">
-            <div className="login-card" style={{ textAlign: "center", padding: "50px 35px" }}>
-              <div style={{ fontSize: "48px", marginBottom: "20px", animation: "heartBeat 1.5s ease-in-out infinite" }}>💕</div>
-              <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: "22px", color: "var(--accent)", marginBottom: "10px" }}>Reconnecting...</h2>
-              <p style={{ fontSize: "13px", color: "var(--text-secondary)" }}>Just a moment, getting you back in</p>
-            </div>
-          </div>
-        ) : currentUser === null ? (
+        {currentUser === null ? (
           <LoginScreen onLoginSuccess={handleLoginSuccess} />
         ) : (
           <>
