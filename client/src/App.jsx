@@ -8,6 +8,7 @@ import CallHistory from "./components/CallHistory";
 import CallOverlay from "./components/CallOverlay";
 import ProfileModal from "./components/ProfileModal";
 import MediaGallery from "./components/MediaGallery";
+import BottomNav from "./components/BottomNav";
 import "./styles/App.css";
 
 const DEFAULT_ICE_SERVERS = [
@@ -891,6 +892,18 @@ function App() {
     setCurrentUser(username);
   }
 
+  function handleNavTabChange(tab) {
+    setActiveTab(tab);
+    if (isMobile) {
+      setShowMobileChat(tab !== "chat");
+    }
+  }
+
+  function handleOpenChat() {
+    setActiveTab("chat");
+    setShowMobileChat(true);
+  }
+
   function handleLogout() {
     setCurrentUser(null);
     setPartnerName(null);
@@ -908,11 +921,6 @@ function App() {
   function handleMobileBack() {
     setShowMobileChat(false);
     setActiveTab("chat");
-  }
-
-  function handleTabChange(tab) {
-    setActiveTab(tab);
-    if (isMobile) setShowMobileChat(true);
   }
 
   const handlePartnerInfo = useCallback((name, online, lastSeen) => {
@@ -935,26 +943,23 @@ function App() {
   function renderDesktop() {
     return (
       <>
-        <Sidebar
-          username={currentUser}
-          displayName={displayName}
-          partnerName={partnerName}
-          partnerDisplayName={partnerDisplayName}
-          partnerNickname={partnerNickname}
-          partnerStatus={getStatusText()}
-          partnerOnline={partnerOnline}
-          selectedContact={selectedContact}
-          onSelectContact={setSelectedContact}
-          onLogout={handleLogout}
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          profilePhoto={profilePhoto}
-          partnerPhoto={partnerPhoto}
-          onOpenProfile={() => setShowProfile(true)}
-          onPartnerNicknameChange={handlePartnerNicknameChange}
-          missedCallCount={missedCallCount}
-          onClearMissedCalls={() => setMissedCallCount(0)}
-        />
+          <Sidebar
+            username={currentUser}
+            displayName={displayName}
+            partnerName={partnerName}
+            partnerDisplayName={partnerDisplayName}
+            partnerNickname={partnerNickname}
+            partnerStatus={getStatusText()}
+            partnerOnline={partnerOnline}
+            selectedContact={selectedContact}
+            onSelectContact={setSelectedContact}
+            onLogout={handleLogout}
+            profilePhoto={profilePhoto}
+            partnerPhoto={partnerPhoto}
+            onOpenProfile={() => setShowProfile(true)}
+            onPartnerNicknameChange={handlePartnerNicknameChange}
+            onOpenChat={handleOpenChat}
+          />
         {activeTab === "chat" ? (
           <ChatPage
             username={currentUser}
@@ -983,8 +988,9 @@ function App() {
   }
 
   function renderMobile() {
-    if (showMobileChat) {
-      return activeTab === "chat" ? (
+    if (activeTab === "chat") {
+      if (showMobileChat) {
+        return (
           <ChatPage
             username={currentUser}
             displayName={displayName}
@@ -1003,34 +1009,35 @@ function App() {
             callStatus={callStatus}
             onStartCall={startCall}
           />
-      ) : activeTab === "media" ? (
-        <MediaGallery messages={messages} partnerName={partnerName} partnerDisplayName={partnerDisplayName} partnerNickname={partnerNickname} />
-      ) : (
-        <CallHistory username={currentUser} partnerName={partnerName} partnerNickname={partnerNickname} onMobileBack={handleMobileBack} profilePhoto={profilePhoto} />
+        );
+      }
+      return (
+        <Sidebar
+          username={currentUser}
+          displayName={displayName}
+          partnerName={partnerName}
+          partnerDisplayName={partnerDisplayName}
+          partnerNickname={partnerNickname}
+          partnerStatus={getStatusText()}
+          partnerOnline={partnerOnline}
+          selectedContact={selectedContact}
+          onSelectContact={handleMobileSelectContact}
+          onLogout={handleLogout}
+          profilePhoto={profilePhoto}
+          partnerPhoto={partnerPhoto}
+          onOpenProfile={() => setShowProfile(true)}
+          onPartnerNicknameChange={handlePartnerNicknameChange}
+          onOpenChat={handleOpenChat}
+        />
       );
     }
-    return (
-      <Sidebar
-        username={currentUser}
-        displayName={displayName}
-        partnerName={partnerName}
-        partnerDisplayName={partnerDisplayName}
-        partnerNickname={partnerNickname}
-        partnerStatus={getStatusText()}
-        partnerOnline={partnerOnline}
-        selectedContact={selectedContact}
-        onSelectContact={handleMobileSelectContact}
-        onLogout={handleLogout}
-        activeTab={activeTab}
-        onTabChange={handleTabChange}
-        profilePhoto={profilePhoto}
-        partnerPhoto={partnerPhoto}
-        onOpenProfile={() => setShowProfile(true)}
-        onPartnerNicknameChange={handlePartnerNicknameChange}
-        missedCallCount={missedCallCount}
-        onClearMissedCalls={() => setMissedCallCount(0)}
-      />
-    );
+    if (activeTab === "calls") {
+      return <CallHistory username={currentUser} partnerName={partnerName} partnerNickname={partnerNickname} onMobileBack={handleMobileBack} profilePhoto={profilePhoto} />;
+    }
+    if (activeTab === "media") {
+      return <MediaGallery messages={messages} partnerName={partnerName} partnerDisplayName={partnerDisplayName} partnerNickname={partnerNickname} />;
+    }
+    return null;
   }
 
   return (
@@ -1051,6 +1058,12 @@ function App() {
             <div className={`chat-layout ${isMobile ? "chat-layout-mobile" : ""}`}>
               {isMobile ? renderMobile() : renderDesktop()}
             </div>
+            <BottomNav
+              activeTab={activeTab}
+              onTabChange={handleNavTabChange}
+              missedCallCount={missedCallCount}
+              onClearMissedCalls={() => setMissedCallCount(0)}
+            />
             {callStatus !== "idle" && (
               <CallOverlay
                 status={callStatus}

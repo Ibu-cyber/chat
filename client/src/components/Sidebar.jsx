@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import ThemeToggle from "./ThemeToggle";
 
-function Sidebar({ username, displayName, partnerName, partnerDisplayName, partnerNickname, partnerStatus, partnerOnline, selectedContact, onSelectContact, onLogout, activeTab, onTabChange, profilePhoto, partnerPhoto, onOpenProfile, onPartnerNicknameChange, missedCallCount, onClearMissedCalls }) {
+function Sidebar({ username, displayName, partnerName, partnerDisplayName, partnerNickname, partnerStatus, partnerOnline, selectedContact, onSelectContact, onLogout, profilePhoto, partnerPhoto, onOpenProfile, onPartnerNicknameChange, onOpenChat }) {
   const [editingNickname, setEditingNickname] = useState(false);
   const [nicknameInput, setNicknameInput] = useState(partnerNickname || "");
   const inputRef = useRef(null);
@@ -48,7 +48,7 @@ function Sidebar({ username, displayName, partnerName, partnerDisplayName, partn
             onClick={() => {
               if (!editingNickname) {
                 onSelectContact(partnerName);
-                onTabChange("chat");
+                if (onOpenChat) onOpenChat();
               }
             }}
           >
@@ -81,29 +81,10 @@ function Sidebar({ username, displayName, partnerName, partnerDisplayName, partn
         )}
       </div>
 
-      <div className="sidebar-nav">
-        <button
-          className={`sidebar-nav-button ${activeTab === "chat" ? "nav-active" : ""}`}
-          onClick={() => onTabChange("chat")}
-        >
-          Chat
-        </button>
-        <button
-          className={`sidebar-nav-button ${activeTab === "calls" ? "nav-active" : ""}`}
-          onClick={() => { onTabChange("calls"); if (onClearMissedCalls) onClearMissedCalls(); }}
-        >
-          Calls
-          {missedCallCount > 0 && <span className="missed-call-badge">{missedCallCount}</span>}
-        </button>
-        <button
-          className={`sidebar-nav-button ${activeTab === "media" ? "nav-active" : ""}`}
-          onClick={() => onTabChange("media")}
-        >
-          Media
-        </button>
-      </div>
-
       <div className="sidebar-footer">
+        <button className="sidebar-backup-btn" onClick={() => window.location.href = "/api/backup"}>
+          Download Backup
+        </button>
         <div className="sidebar-footer-row">
           <ThemeToggle />
           <button className="sidebar-logout" onClick={onLogout}>

@@ -22,6 +22,8 @@ const connectDatabase = require("./db"); // Our MongoDB connection
 const Message = require("./models/Message"); // The Message blueprint
 const Presence = require("./models/Presence"); // For persisting lastSeen across restarts
 const uploadRouter = require("./routes/upload"); // File upload handler
+const archiver = require("archiver");
+const fs = require("fs");
 
 // =======================================
 // SECTION 2: CREATE THE SERVER
@@ -105,6 +107,32 @@ app.use("/api/upload", uploadRouter);
 app.post("/api/clear-logs", (req, res) => {
   io.emit("clear_call_logs");
   res.json({ ok: true });
+});
+
+// ---------- Backup: download all messages + uploads as ZIP ----------
+app.get("/api/backup", async (req, res) => {
+  try {
+    const Message = require("./models/Message");
+    const messages = await Message.find().sort({ createdAt: 1 }).lean();
+
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="heartchat_backup_${Date.now()}.zip"`);
+
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    archive.pipe(res);
+
+    archive.append(JSON.stringify(messages, null, 2), { name: "messages.json" });
+
+    const uploadsDir = path.join(__dirname, "uploads");
+    if (fs.existsSync(uploadsDir)) {
+      archive.directory(uploadsDir, "uploads");
+    }
+
+    await archive.finalize();
+  } catch (err) {
+    console.error("Backup failed:", err);
+    res.status(500).json({ error: "Backup failed" });
+  }
 });
 
 // =======================================
