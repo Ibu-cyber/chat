@@ -344,10 +344,10 @@ io.on("connection", async (socket) => {
     try {
       const recentMessages = await Message.find()
         .sort({ createdAt: -1 })
-        .limit(100)
+        .limit(500)
         .sort({ createdAt: 1 });
+      console.log(`  [request_messages] ${socket.username} requested — sending ${recentMessages.length} messages`);
       socket.emit("load_messages", recentMessages);
-      console.log(`  Sent ${recentMessages.length} messages to ${socket.username} (on request)`);
     } catch (error) {
       console.error("Error loading messages on request:", error.message);
     }

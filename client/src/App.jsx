@@ -866,6 +866,15 @@ function App() {
 
   function handleLoginSuccess(username) {
     setCurrentUser(username);
+    function doRequest() {
+      const socket = getSocket();
+      if (socket && socket.connected) {
+        socket.emit("request_messages");
+      } else {
+        setTimeout(doRequest, 300);
+      }
+    }
+    doRequest();
   }
 
   function handleNavTabChange(tab) {
