@@ -194,6 +194,10 @@ app.get("/api/turn-credentials", (req, res) => {
     { urls: "stun:stun4.l.google.com:19302" },
   ];
 
+  // Open relay first (always works, proven)
+  iceServers.push(OPENRELAY_TURN);
+
+  // Your private TURN server (activate on Metered dashboard for this to work)
   if (TURN_URL && TURN_USERNAME && TURN_CREDENTIAL) {
     iceServers.push({
       urls: TURN_URL.split(",").map((url) => url.trim()).filter(Boolean),
@@ -201,9 +205,6 @@ app.get("/api/turn-credentials", (req, res) => {
       credential: TURN_CREDENTIAL,
     });
   }
-
-  // Always include public fallback TURN
-  iceServers.push(OPENRELAY_TURN);
 
   res.json({ iceServers, ttl: 86400 });
 });
