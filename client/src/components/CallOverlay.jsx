@@ -215,9 +215,11 @@ function CallOverlay({
       return (
         <div className="call-overlay call-active">
           <div className="call-video-stage">
-            <video ref={remoteVideoRef} className="call-remote-video" autoPlay playsInline />
+            <div className="call-remote-container">
+              <video ref={remoteVideoRef} className="call-remote-video" autoPlay playsInline />
+            </div>
             {localStream && (
-              <div className="call-local-preview">
+              <div className="call-local-container">
                 <video ref={localVideoRef} className="call-local-video" autoPlay playsInline muted />
                 <span className="call-video-label">You</span>
               </div>
