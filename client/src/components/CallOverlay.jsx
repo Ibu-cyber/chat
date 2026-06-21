@@ -98,6 +98,20 @@ function CallOverlay({
     };
   }, [status]);
 
+  useEffect(() => {
+    if (status !== "connected") return;
+    const audioEl = remoteAudioRef.current;
+    if (!audioEl || !audioEl.setSinkId) return;
+    (async () => {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const comms = devices.find(d => d.kind === "audiooutput" && d.deviceId === "communications");
+        await audioEl.setSinkId(comms ? comms.deviceId : "default");
+        setIsSpeakerOn(false);
+      } catch {}
+    })();
+  }, [status]);
+
   const partnerLabel = partnerNickname || partnerDisplayName || partnerName;
 
   function startRingtone() {
@@ -164,7 +178,9 @@ function CallOverlay({
         await audioEl.setSinkId(speaker ? speaker.deviceId : "");
         setIsSpeakerOn(true);
       } else {
-        await audioEl.setSinkId("default");
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const comms = devices.find(d => d.kind === "audiooutput" && d.deviceId === "communications");
+        await audioEl.setSinkId(comms ? comms.deviceId : "default");
         setIsSpeakerOn(false);
       }
     } catch (err) {
@@ -298,7 +314,7 @@ function CallOverlay({
               </svg>
             </button>
           </div>
-          <audio ref={remoteAudioRef} className="call-remote-audio" autoPlay />
+          <audio ref={remoteAudioRef} className="call-remote-audio" autoPlay playsInline />
         </div>
       );
     }
@@ -352,7 +368,7 @@ function CallOverlay({
             </svg>
           </button>
         </div>
-        <audio ref={remoteAudioRef} className="call-remote-audio" autoPlay />
+        <audio ref={remoteAudioRef} className="call-remote-audio" autoPlay playsInline />
       </div>
     );
   }
