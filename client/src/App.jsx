@@ -14,6 +14,9 @@ import "./styles/App.css";
 const DEFAULT_ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun2.l.google.com:19302" },
+  { urls: "stun:stun3.l.google.com:19302" },
+  { urls: "stun:stun4.l.google.com:19302" },
   { urls: "stun:openrelay.metered.ca:80" },
   {
     urls: [
@@ -25,6 +28,7 @@ const DEFAULT_ICE_SERVERS = [
     username: "openrelayproject",
     credential: "openrelayproject",
   },
+  { urls: "stun:stun.cloudflare.com:3478" },
 ];
 
 function getIceServers() {
