@@ -474,14 +474,10 @@ function App() {
     return pcRef.current;
   }
 
-  let iceRelayAttempts = 0;
   const remoteStreamForPc = new MediaStream();
 
   function createPeerConnection(stream) {
-    iceRelayAttempts = 0;
-    const config = useRelayOnly
-      ? buildPeerConfig(currentPeerConfig.iceServers, true)
-      : currentPeerConfig;
+    const config = currentPeerConfig;
     const pc = new RTCPeerConnection(config);
     console.debug("[webrtc] create peer connection", {
       callId: callIdRef.current,
@@ -810,6 +806,9 @@ function App() {
 
       unlockAudioPlayback();
 
+      const iceServers = await fetchIceServers();
+      currentPeerConfig = buildPeerConfig(iceServers);
+
       const stream = await getMedia(type === "video");
       localStreamRef.current = stream;
       setLocalStream(stream);
@@ -832,6 +831,9 @@ function App() {
       callRoleRef.current = "callee";
 
       unlockAudioPlayback();
+
+      const iceServers = await fetchIceServers();
+      currentPeerConfig = buildPeerConfig(iceServers);
 
       const stream = await getMedia(callTypeRef.current === "video");
       localStreamRef.current = stream;
