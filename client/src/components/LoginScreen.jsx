@@ -17,6 +17,7 @@ function LoginScreen({ onLoginSuccess }) {
   const [password, setPassword] = useState(""); // Password input
   const [error, setError] = useState(""); // Error message (if login fails)
   const [isLoading, setIsLoading] = useState(false); // Loading state
+  const [showPassword, setShowPassword] = useState(false); // Password visibility toggle
 
   // ---------- 3. HANDLE LOGIN SUBMISSION ----------
   function handleLogin(event) {
@@ -94,14 +95,24 @@ function LoginScreen({ onLoginSuccess }) {
           {/* Password field */}
           <div className="login-field">
             <label htmlFor="password">Your Password</label>
-            <input
-              id="password"
-              type="text"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={isLoading}
-            />
+            <div className="password-input-wrapper">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={isLoading}
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword((p) => !p)}
+                tabIndex={-1}
+              >
+                {showPassword ? "🙈" : "👁️"}
+              </button>
+            </div>
           </div>
 
           {/* Error message (if any) */}

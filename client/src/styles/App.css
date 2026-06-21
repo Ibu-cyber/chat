@@ -1489,6 +1489,33 @@ body {
   color: var(--text-secondary);
 }
 
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrapper input {
+  padding-right: 40px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 4px;
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 8px;
+  line-height: 1;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.password-toggle:hover {
+  background: var(--scrollbar-color);
+}
+
 .login-error {
   color: var(--color-error);
   font-size: 13px;
