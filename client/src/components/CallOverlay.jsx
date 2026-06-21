@@ -243,18 +243,18 @@ function CallOverlay({
                 </svg>
               )}
             </button>
-            {callType === "video" && (
-              <button
-                className="call-control-button"
-                onClick={onToggleCamera}
-                title="Switch camera"
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 4v6h6"/>
-                  <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
-                </svg>
-              </button>
-            )}
+            <button
+              className="call-control-button"
+              onClick={onToggleCamera}
+              title="Switch camera"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="17 1 21 5 17 9" />
+                <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                <polyline points="7 23 3 19 7 15" />
+                <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+              </svg>
+            </button>
             <button
               className="call-control-button"
               onClick={onEnd}
